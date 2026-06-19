@@ -20,8 +20,9 @@ const clientOptions = {
     isWindows: false,
     unicodeVersion: '11',
 } as ClientOptions;
+const isTouch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 const termOptions = {
-    fontSize: 13,
+    fontSize: isTouch ? 14 : 13,
     fontFamily: 'Consolas,Liberation Mono,Menlo,Courier,monospace',
     theme: {
         foreground: '#d2d2d2',

@@ -6,13 +6,130 @@ body {
   overflow: hidden;
 }
 
-#terminal-container {
-  width: auto;
+#terminal-root {
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  margin: 0 auto;
+}
+
+#terminal-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  // NB: in the #terminal-root flex column, auto left/right margins would
+  // defeat align-items:stretch and shrink-wrap the terminal (PC side gutters).
+  align-self: stretch;
+  width: auto;
+  margin: 0;
   padding: 0;
   .terminal {
     padding: 5px;
     height: calc(100% - 10px);
   }
+}
+
+// Avoid iOS auto-zoom when the hidden input gains focus (triggers when < 16px).
+.xterm-helper-textarea {
+  font-size: 16px !important;
+}
+
+// Mobile virtual key bar — hidden on desktop, shown only for coarse pointers.
+#keybar {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  #keybar {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+    padding: 6px 8px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom));
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    background: #1c1c1c;
+    border-top: 1px solid #000;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .keybar-key {
+    flex: 0 0 auto;
+    min-width: 44px;
+    height: 40px;
+    padding: 0 12px;
+    font-size: 15px;
+    font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    color: #d2d2d2;
+    background: #3a3a3a;
+    border: 1px solid #555;
+    border-radius: 6px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .keybar-key.keybar-wide {
+    min-width: 56px;
+  }
+
+  .keybar-key:active {
+    background: #555;
+  }
+}
+
+// Landscape nudge overlay (narrow phones in portrait only; component-gated).
+#orient-hint {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: #d2d2d2;
+  background: rgba(20, 20, 20, 0.93);
+  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  -webkit-user-select: none;
+  user-select: none;
+
+  .orient-icon {
+    font-size: 56px;
+    line-height: 1;
+    color: #00a7aa;
+    animation: orient-rot 1.8s ease-in-out infinite;
+  }
+  .orient-text {
+    margin-top: 14px;
+    font-size: 18px;
+  }
+  .orient-sub {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #9a9a9a;
+  }
+  .orient-btn {
+    margin-top: 20px;
+    padding: 10px 22px;
+    font-size: 15px;
+    color: #001b1b;
+    background: #00a7aa;
+    border: 0;
+    border-radius: 8px;
+  }
+  .orient-link {
+    display: block;
+    margin: 14px auto 0;
+    padding: 6px;
+    font-size: 13px;
+    color: #84b0d8;
+    background: none;
+    border: 0;
+    text-decoration: underline;
+  }
+}
+
+@keyframes orient-rot {
+  0%, 55% { transform: rotate(0); }
+  80%, 100% { transform: rotate(-90deg); }
 }

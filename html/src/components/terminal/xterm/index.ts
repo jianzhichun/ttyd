@@ -227,6 +227,11 @@ export class Xterm {
     }
 
     @bind
+    public fit() {
+        this.fitAddon.fit();
+    }
+
+    @bind
     public sendData(data: string | Uint8Array) {
         const { socket, textEncoder } = this;
         if (socket?.readyState !== WebSocket.OPEN) return;
