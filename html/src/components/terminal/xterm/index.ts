@@ -279,7 +279,10 @@ export class Xterm {
 
         this.doReconnect = this.reconnect;
         this.initListeners();
-        terminal.focus();
+        // On touch devices don't auto-summon the soft keyboard on connect — let
+        // the user tap the terminal (or the ⌨ toggle) when they want to type.
+        const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+        if (!coarse) terminal.focus();
     }
 
     @bind

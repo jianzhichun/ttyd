@@ -1,8 +1,9 @@
 import { h, Component } from 'preact';
 
 interface Props {
-    // send a raw byte sequence to the PTY (already framed by Xterm.sendData)
-    onKey: (data: string) => void;
+    // send a raw byte sequence to the PTY; blur=true hides the soft keyboard
+    // afterwards (for scroll keys — you're reading, not typing).
+    onKey: (data: string, blur?: boolean) => void;
     // summon / dismiss the soft keyboard
     onToggleKeyboard: () => void;
 }
@@ -11,8 +12,14 @@ interface Key {
     label: string;
     seq?: string;
     act?: 'kbd';
+    blur?: boolean;
     wide?: boolean;
 }
+
+// One SGR mouse wheel notch (tmux `mouse on` turns this into a scrollback
+// scroll). 64 = wheel-up, 65 = wheel-down; coords just need to land in a pane.
+const WHEEL_UP = '\x1b[<64;2;2M'.repeat(3);
+const WHEEL_DOWN = '\x1b[<65;2;2M'.repeat(3);
 
 // Mobile virtual keys for driving full-screen TUIs (e.g. Claude Code) where the
 // soft keyboard has no Esc / Tab / arrows / Ctrl combos. Each entry sends an
@@ -25,6 +32,8 @@ const KEYS: Key[] = [
     { label: '↑', seq: '\x1b[A' },
     { label: '↓', seq: '\x1b[B' },
     { label: '→', seq: '\x1b[C' },
+    { label: '⇞', seq: WHEEL_UP, blur: true },
+    { label: '⇟', seq: WHEEL_DOWN, blur: true },
     { label: '^C', seq: '\x03' },
     { label: '^R', seq: '\x12' },
     { label: '^L', seq: '\x0c' },
@@ -44,7 +53,7 @@ export class KeyBar extends Component<Props> {
 
     private press(k: Key) {
         if (k.act === 'kbd') this.props.onToggleKeyboard();
-        else this.props.onKey(k.seq as string);
+        else this.props.onKey(k.seq as string, k.blur);
     }
 
     render() {

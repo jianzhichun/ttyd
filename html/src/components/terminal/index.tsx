@@ -20,6 +20,7 @@ export class Terminal extends Component<Props, State> {
     private root: HTMLElement;
     private xterm: Xterm;
     private disposeViewport?: () => void;
+    private disposeTap?: () => void;
 
     constructor(props: Props) {
         super();
@@ -30,11 +31,14 @@ export class Terminal extends Component<Props, State> {
         await this.xterm.refreshToken();
         this.xterm.open(this.container);
         this.xterm.connect();
+        this.hardenInput();
         this.setupViewport();
+        this.setupTapDismiss();
     }
 
     componentWillUnmount() {
         this.disposeViewport?.();
+        this.disposeTap?.();
         this.xterm.dispose();
     }
 
@@ -56,9 +60,12 @@ export class Terminal extends Component<Props, State> {
     }
 
     @bind
-    private sendKey(data: string) {
+    private sendKey(data: string, blur?: boolean) {
+        // sendData goes straight to the socket and needs no focus, so a special
+        // key must NOT focus the textarea — otherwise every Esc/arrow/Ctrl tap
+        // re-summons the soft keyboard. blur=true (scroll keys) actively hides it.
         this.xterm.sendData(data);
-        window.term?.focus();
+        if (blur) window.term?.blur();
     }
 
     @bind
@@ -69,6 +76,17 @@ export class Terminal extends Component<Props, State> {
         } else {
             window.term?.focus();
         }
+    }
+
+    // Tame the iOS soft keyboard for terminal use: kill autocorrect /
+    // autocapitalize / predictive text that would corrupt typed commands.
+    private hardenInput() {
+        const ta = this.container.querySelector('.xterm-helper-textarea');
+        if (!ta) return;
+        ta.setAttribute('autocorrect', 'off');
+        ta.setAttribute('autocapitalize', 'none');
+        ta.setAttribute('autocomplete', 'off');
+        ta.setAttribute('spellcheck', 'false');
     }
 
     // On touch devices the soft keyboard shrinks the visual viewport without
@@ -90,6 +108,42 @@ export class Terminal extends Component<Props, State> {
         this.disposeViewport = () => {
             vv.removeEventListener('resize', onChange);
             vv.removeEventListener('scroll', onChange);
+        };
+    }
+
+    // Mobile keyboard dismiss: a tap in the upper (transcript) area hides the
+    // soft keyboard so you can read output; tapping near the bottom prompt
+    // re-focuses to type. Only a real tap (no drag/selection) counts.
+    @bind
+    private setupTapDismiss() {
+        const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+        if (!coarse) return;
+        const el = this.container;
+        let sx = 0;
+        let sy = 0;
+        let single = false;
+
+        const onStart = (e: TouchEvent) => {
+            single = e.touches.length === 1;
+            sx = e.touches[0].clientX;
+            sy = e.touches[0].clientY;
+        };
+        const onEnd = (e: TouchEvent) => {
+            if (!single || e.changedTouches.length !== 1) return;
+            const t = e.changedTouches[0];
+            const moved = Math.abs(t.clientX - sx) + Math.abs(t.clientY - sy);
+            if (moved > 12) return; // a drag/selection, not a tap
+            const focused = document.activeElement?.classList.contains('xterm-helper-textarea');
+            if (!focused) return;
+            const rect = el.getBoundingClientRect();
+            if (t.clientY - rect.top < rect.height * 0.7) window.term?.blur();
+        };
+
+        el.addEventListener('touchstart', onStart, { passive: true });
+        el.addEventListener('touchend', onEnd, { passive: true });
+        this.disposeTap = () => {
+            el.removeEventListener('touchstart', onStart);
+            el.removeEventListener('touchend', onEnd);
         };
     }
 
