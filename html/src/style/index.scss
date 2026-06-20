@@ -42,6 +42,44 @@ body {
   font-size: 16px !important;
 }
 
+// Upload toast + progress bar (📎 button / Ctrl+V paste). Floats top-center over
+// the terminal; shown on desktop and mobile alike.
+#upload-toast {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  min-width: 200px;
+  max-width: 80%;
+  padding: 8px 12px;
+  background: rgba(28, 28, 28, 0.95);
+  border: 1px solid #555;
+  border-radius: 8px;
+  color: #d2d2d2;
+  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  font-size: 13px;
+  pointer-events: none;
+
+  .upload-msg {
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .upload-track {
+    height: 4px;
+    background: #3a3a3a;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .upload-fill {
+    height: 100%;
+    background: #00a7aa;
+    transition: width 0.15s linear;
+  }
+}
+
 // Mobile virtual key bar — hidden on desktop, shown only for coarse pointers.
 #keybar {
   display: none;

@@ -13,7 +13,11 @@ interface Props extends XtermOptions {
 interface State {
     modal: boolean;
     armed: '' | Mod;
+    upload: string; // toast text while uploading ('' = hidden)
+    uploadPct: number; // 0-100 for the progress bar
 }
+
+const MAX_UPLOAD = 2 * 1024 * 1024 * 1024; // keep in sync with server MAX_BYTES (2 GB)
 
 export class Terminal extends Component<Props, State> {
     private container: HTMLElement;
@@ -25,7 +29,10 @@ export class Terminal extends Component<Props, State> {
     private fileInput?: HTMLInputElement;
     private disarmTimer?: number;
 
-    state: State = { modal: false, armed: '' };
+    state: State = { modal: false, armed: '', upload: '', uploadPct: 0 };
+    private uploadQueue: Blob[] = [];
+    private uploading = false;
+    private toastTimer?: number;
 
     constructor(props: Props) {
         super();
@@ -48,12 +55,21 @@ export class Terminal extends Component<Props, State> {
         this.disposeTap?.();
         this.disposePaste?.();
         if (this.disarmTimer) clearTimeout(this.disarmTimer);
+        if (this.toastTimer) clearTimeout(this.toastTimer);
         this.xterm.dispose();
     }
 
-    render({ id }: Props, { modal, armed }: State) {
+    render({ id }: Props, { modal, armed, upload, uploadPct }: State) {
         return (
             <div id="terminal-root" ref={c => (this.root = c as HTMLElement)}>
+                {upload && (
+                    <div id="upload-toast">
+                        <div class="upload-msg">{upload}</div>
+                        <div class="upload-track">
+                            <div class="upload-fill" style={`width:${uploadPct}%`} />
+                        </div>
+                    </div>
+                )}
                 <div id={id} ref={c => (this.container = c as HTMLElement)}>
                     <Modal show={modal}>
                         <label class="file-label">
@@ -93,25 +109,80 @@ export class Terminal extends Component<Props, State> {
     @bind
     private onFilePicked(e: Event) {
         const input = e.target as HTMLInputElement;
-        const files = input.files;
-        if (files) for (let i = 0; i < files.length; i++) this.uploadAndInject(files[i]);
+        if (input.files) this.enqueue(Array.from(input.files));
         input.value = ''; // allow re-picking the same file
     }
 
-    private async uploadAndInject(blob: Blob) {
-        try {
-            const url = new URL('__ccupload', window.location.href).href;
-            const resp = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': blob.type || 'application/octet-stream' },
-                body: blob,
-            });
-            if (!resp.ok) return;
-            const { path } = await resp.json();
-            if (path) this.xterm.sendData(path + ' ');
-        } catch {
-            // upload failed (offline / endpoint down) — silently ignore
+    // Queue files and upload them one at a time, surfacing progress in a toast.
+    private enqueue(blobs: Blob[]) {
+        this.uploadQueue.push(...blobs);
+        if (!this.uploading) this.drainQueue();
+    }
+
+    private async drainQueue() {
+        this.uploading = true;
+        let done = 0;
+        while (this.uploadQueue.length) {
+            const blob = this.uploadQueue.shift() as Blob;
+            const idx = ++done;
+            const total = done + this.uploadQueue.length; // remaining + already-done
+            const prefix = total > 1 ? `上传 ${idx}/${total} · ` : '上传 · ';
+            if (blob.size > MAX_UPLOAD) {
+                this.flashToast(`文件过大 (${this.fmtSize(blob.size)} > 2GB),跳过`);
+                continue;
+            }
+            // show immediately (small uploads may finish before onprogress fires)
+            this.setState({ upload: `${prefix}0%`, uploadPct: 0 });
+            try {
+                const path = await this.uploadOne(blob, pct =>
+                    this.setState({ upload: `${prefix}${pct}%`, uploadPct: pct })
+                );
+                if (path) {
+                    this.xterm.sendData(path + ' ');
+                    this.flashToast(`已添加 ${path.split('/').pop()}`);
+                } else {
+                    this.flashToast('上传失败');
+                }
+            } catch {
+                this.flashToast('上传失败 (端点不可达)');
+            }
         }
+        this.uploading = false;
+    }
+
+    // XHR (not fetch) so we get real upload progress events.
+    private uploadOne(blob: Blob, onProgress: (pct: number) => void): Promise<string | null> {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', new URL('__ccupload', window.location.href).href);
+            xhr.setRequestHeader('Content-Type', blob.type || 'application/octet-stream');
+            xhr.upload.onprogress = e => {
+                if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+            };
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        resolve(JSON.parse(xhr.responseText).path || null);
+                    } catch {
+                        resolve(null);
+                    }
+                } else {
+                    resolve(null);
+                }
+            };
+            xhr.onerror = () => reject(new Error('network'));
+            xhr.send(blob);
+        });
+    }
+
+    private flashToast(msg: string) {
+        if (this.toastTimer) clearTimeout(this.toastTimer);
+        this.setState({ upload: msg, uploadPct: 100 });
+        this.toastTimer = window.setTimeout(() => this.setState({ upload: '', uploadPct: 0 }), 2200);
+    }
+
+    private fmtSize(n: number): string {
+        return n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(0)}MB` : `${(n / 1024).toFixed(0)}KB`;
     }
 
     // Desktop Ctrl+V of an image: capture the blob before xterm sees the paste.
@@ -120,18 +191,18 @@ export class Terminal extends Component<Props, State> {
         const onPaste = (e: ClipboardEvent) => {
             const items = e.clipboardData?.items;
             if (!items) return;
-            let handled = false;
+            const blobs: Blob[] = [];
             for (let i = 0; i < items.length; i++) {
                 const it = items[i];
                 if (it.kind === 'file' && it.type.startsWith('image/')) {
                     const f = it.getAsFile();
-                    if (f) {
-                        this.uploadAndInject(f);
-                        handled = true;
-                    }
+                    if (f) blobs.push(f);
                 }
             }
-            if (handled) e.preventDefault(); // don't let image bytes reach xterm as garbage
+            if (blobs.length) {
+                e.preventDefault(); // don't let image bytes reach xterm as garbage
+                this.enqueue(blobs);
+            }
         };
         document.addEventListener('paste', onPaste, true); // capture: run before xterm's handler
         this.disposePaste = () => document.removeEventListener('paste', onPaste, true);
