@@ -72,7 +72,7 @@ function mapStrIdx(terminal: Terminal, lineIndex: number, startCol: number, stri
 // TUIs (Ink / Claude Code) often wrap one column EARLY — they avoid writing the
 // last cell so the terminal's own autowrap never fires — so a hard-wrapped row's
 // content can stop at cols-1 with the last cell blank. Tolerate that gap.
-const EDGE_SLACK = 1;
+const EDGE_SLACK = 2;
 
 // Visible content width of a row = column after its last non-blank cell.
 function rowContentLen(line: IBufferLine, cols: number, cell: IBufferCell): number {
