@@ -8,7 +8,7 @@ body {
 
 // Lock the page so the iOS soft keyboard can't auto-scroll the document on
 // focus — that scroll stacks on top of our keyboard-aware transform and leaves
-// a gap between the key bar and the keyboard ("撑开"). Pinned, only the
+// a gap between the key bar and the keyboard. Pinned, only the
 // transform moves content, so the key bar sits flush above the keyboard.
 body {
   position: fixed;

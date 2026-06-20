@@ -122,9 +122,9 @@ export class Terminal extends Component<Props, State> {
             const blob = this.uploadQueue.shift() as Blob;
             const idx = ++done;
             const total = done + this.uploadQueue.length; // remaining + already-done
-            const prefix = total > 1 ? `上传 ${idx}/${total} · ` : '上传 · ';
+            const prefix = total > 1 ? `Upload ${idx}/${total} · ` : 'Upload · ';
             if (blob.size > MAX_UPLOAD) {
-                this.flashToast(`文件过大 (${this.fmtSize(blob.size)} > 2GB),跳过`);
+                this.flashToast(`File too large (${this.fmtSize(blob.size)} > 2GB), skipped`);
                 continue;
             }
             // show immediately (small uploads may finish before onprogress fires)
@@ -135,12 +135,12 @@ export class Terminal extends Component<Props, State> {
                 );
                 if (path) {
                     this.xterm.sendData(path + ' ');
-                    this.flashToast(`已添加 ${path.split('/').pop()}`);
+                    this.flashToast(`Added ${path.split('/').pop()}`);
                 } else {
-                    this.flashToast('上传失败');
+                    this.flashToast('Upload failed');
                 }
             } catch {
-                this.flashToast('上传失败 (端点不可达)');
+                this.flashToast('Upload failed (endpoint unreachable)');
             }
         }
         this.uploading = false;
