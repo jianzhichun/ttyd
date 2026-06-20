@@ -88,13 +88,14 @@ body {
 }
 
 @media (pointer: coarse) {
-  // Multi-row, no horizontal scroll: main keys wrap on the left, the arrow
-  // cluster (inverted-T) is pinned to the right like a standard keyboard.
+  // Uniform 7-per-row grid, equal-width cells. Long labels truncate (ellipsis),
+  // never overflow. The ↑/↓ pair shares one cell (↑ above ↓) so 11 function keys
+  // + 4 arrows fit in exactly 2 rows.
   #keybar {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: flex-start;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    grid-auto-rows: 44px;
+    gap: 6px;
     padding: 6px 8px;
     padding-bottom: calc(6px + env(safe-area-inset-bottom));
     background: #1c1c1c;
@@ -103,55 +104,19 @@ body {
     -webkit-user-select: none;
   }
 
-  .keybar-main {
-    flex: 1 1 auto;
-    display: flex;
-    flex-wrap: wrap;
-    align-content: flex-start;
-    gap: 6px;
-  }
-
-  .keybar-arrows {
-    flex: 0 0 auto;
-    display: grid;
-    grid-template-columns: repeat(3, 44px);
-    grid-auto-rows: 38px;
-    grid-template-areas:
-      "ka-up . ka-clip"
-      "ka-left ka-down ka-right";
-    gap: 6px;
-  }
-  .keybar-arrows .ka-clip {
-    grid-area: ka-clip;
-  }
-  .keybar-arrows .ka-up {
-    grid-area: ka-up;
-  }
-  .keybar-arrows .ka-left {
-    grid-area: ka-left;
-  }
-  .keybar-arrows .ka-down {
-    grid-area: ka-down;
-  }
-  .keybar-arrows .ka-right {
-    grid-area: ka-right;
-  }
-  .keybar-arrows .keybar-key {
-    width: 100%;
-    min-width: 0;
-  }
-
   .keybar-key {
-    flex: 0 0 auto;
-    min-width: 44px;
-    height: 38px;
-    padding: 0 10px;
+    min-width: 0; // allow the cell to shrink so the label can ellipsis
+    height: 100%;
+    padding: 0 6px;
     font-size: 15px;
     font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
     color: #d2d2d2;
     background: #3a3a3a;
     border: 1px solid #555;
     border-radius: 6px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }
@@ -165,5 +130,30 @@ body {
     color: #001b1b;
     background: #00a7aa;
     border-color: #00a7aa;
+  }
+
+  // one grid cell holding ↑ stacked above ↓
+  .keybar-updown {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    height: 100%;
+    min-width: 0;
+
+    button {
+      flex: 1;
+      min-width: 0;
+      padding: 0;
+      font-size: 13px;
+      color: #d2d2d2;
+      background: #3a3a3a;
+      border: 1px solid #555;
+      border-radius: 5px;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    button:active {
+      background: #555;
+    }
   }
 }
