@@ -73,4 +73,14 @@ function check(name, cond) {
     check('mid-row URL not over-merged', a.length === 1 && a[0].text === 'https://a.co/x' && a[0].range.end.y === 1);
 }
 
+// Case 5: HARD wrap that wraps ONE COLUMN EARLY (row0 content = cols-1, last cell blank).
+{
+    const t = makeTerminal([{ text: 'https://example.com', wrapped: false }, { text: '/foo/bar', wrapped: false }], 20);
+    const full = 'https://example.com/foo/bar';
+    const a = computeLinks(t, 1, noop);
+    const b = computeLinks(t, 2, noop);
+    check('1-col-early: row 1 yields full link spanning 2 rows', a.length === 1 && a[0].text === full && a[0].range.end.y === 2);
+    check('1-col-early: continuation row yields same full link', b.length === 1 && b[0].text === full);
+}
+
 console.log(`\n${passed} checks passed`);

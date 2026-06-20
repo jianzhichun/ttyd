@@ -69,21 +69,38 @@ function mapStrIdx(terminal: Terminal, lineIndex: number, startCol: number, stri
     return [lineIndex, col];
 }
 
-// Is the row completely full — a real glyph occupies the last column? Hard-wrapping
-// emitters fill the row to the edge before the newline.
-function rowIsFull(line: IBufferLine, cols: number, cell: IBufferCell): boolean {
-    line.getCell(cols - 1, cell);
-    return cell.getWidth() !== 0 && cell.getChars() !== '';
+// TUIs (Ink / Claude Code) often wrap one column EARLY — they avoid writing the
+// last cell so the terminal's own autowrap never fires — so a hard-wrapped row's
+// content can stop at cols-1 with the last cell blank. Tolerate that gap.
+const EDGE_SLACK = 1;
+
+// Visible content width of a row = column after its last non-blank cell.
+function rowContentLen(line: IBufferLine, cols: number, cell: IBufferCell): number {
+    for (let c = cols - 1; c >= 0; c--) {
+        line.getCell(c, cell);
+        if (cell.getWidth() !== 0 && cell.getChars() !== '') return c + 1;
+    }
+    return 0;
 }
 
-// Does the row at `idx` flow into idx+1? Soft wrap (next.isWrapped) OR a full row.
+function startsNonSpace(line: IBufferLine, cell: IBufferCell): boolean {
+    line.getCell(0, cell);
+    const ch = cell.getChars();
+    return ch !== '' && ch !== ' ';
+}
+
+// Does the row at `idx` flow into idx+1? True for soft wraps (next.isWrapped), and
+// for hard-wrapped rows whose content runs to within EDGE_SLACK of the right edge
+// and continue into a non-blank next row (covers emitters that wrap a column early).
 function continuesDown(terminal: Terminal, idx: number, cell: IBufferCell): boolean {
     const buf = terminal.buffer.active;
     const next = buf.getLine(idx + 1);
     if (!next) return false;
     if (next.isWrapped) return true;
     const cur = buf.getLine(idx);
-    return cur ? rowIsFull(cur, terminal.cols, cell) : false;
+    if (!cur) return false;
+    const len = rowContentLen(cur, terminal.cols, cell);
+    return len > 0 && len >= terminal.cols - EDGE_SLACK && startsNonSpace(next, cell);
 }
 
 // Build the logical (possibly multi-row) line containing `lineIndex` and the index
