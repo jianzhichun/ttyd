@@ -25,17 +25,19 @@ interface Key {
 // Prev-window dropped as a dedicated key — still reachable via the sticky ^B
 // then p. (No Spc/⌨: native kbd has space, tapping the terminal summons it.
 // Scrollback scrolling is done by swiping — see Terminal.setupTouch.)
+// Source order = auto-flow fill order. Row 1: Esc Tab ⇧⇥ / @ (then ↑ 📎 placed
+// explicitly); row 2: ^C Ctrl ^B ^Bn (then ← ↓ → placed explicitly).
 const FUNC: Key[] = [
     { label: 'Esc', seq: '\x1b' },
     { label: 'Tab', seq: '\t' },
     { label: '⇧⇥', seq: '\x1b[Z' },
+    // / and @ start a slash-command / @-mention you keep typing → summon keyboard
+    { label: '/', seq: '/', focus: true },
+    { label: '@', seq: '@', focus: true },
     { label: '^C', seq: '\x03' },
     { label: 'Ctrl', mod: 'ctrl' },
     { label: '^B', mod: 'prefix' },
     { label: '^Bn', seq: '\x02n' },
-    // / and @ start a slash-command / @-mention you keep typing → summon keyboard
-    { label: '/', seq: '/', focus: true },
-    { label: '@', seq: '@', focus: true },
 ];
 
 const CLIP: Key = { label: '📎', act: 'upload' }; // top-right corner
