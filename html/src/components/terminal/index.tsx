@@ -91,7 +91,6 @@ export class Terminal extends Component<Props, State> {
                 <input
                     ref={c => (this.fileInput = c as HTMLInputElement)}
                     type="file"
-                    accept="image/*"
                     multiple
                     style="display:none"
                     onChange={this.onFilePicked}
