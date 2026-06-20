@@ -60,12 +60,15 @@ export class Terminal extends Component<Props, State> {
     }
 
     @bind
-    private sendKey(data: string, blur?: boolean) {
+    private sendKey(data: string, blur?: boolean, focus?: boolean) {
         // sendData goes straight to the socket and needs no focus, so a special
         // key must NOT focus the textarea — otherwise every Esc/arrow/Ctrl tap
-        // re-summons the soft keyboard. blur=true (scroll keys) actively hides it.
+        // re-summons the soft keyboard. blur=true (scroll keys) hides it; focus=
+        // true (keys that open a prompt, e.g. rename) summons it — the tap is a
+        // user gesture, so focus() is honored even on iOS.
         this.xterm.sendData(data);
         if (blur) window.term?.blur();
+        else if (focus) window.term?.focus();
     }
 
     @bind

@@ -2,8 +2,8 @@ import { h, Component } from 'preact';
 
 interface Props {
     // send a raw byte sequence to the PTY; blur=true hides the soft keyboard
-    // afterwards (for scroll keys — you're reading, not typing).
-    onKey: (data: string, blur?: boolean) => void;
+    // afterwards (scroll keys), focus=true summons it (keys that open a prompt).
+    onKey: (data: string, blur?: boolean, focus?: boolean) => void;
     // summon / dismiss the soft keyboard
     onToggleKeyboard: () => void;
 }
@@ -13,6 +13,7 @@ interface Key {
     seq?: string;
     act?: 'kbd';
     blur?: boolean;
+    focus?: boolean;
     wide?: boolean;
 }
 
@@ -43,6 +44,10 @@ const KEYS: Key[] = [
     { label: '/', seq: '/' },
     { label: '|', seq: '|' },
     { label: '~', seq: '~' },
+    // tmux (prefix C-b = \x02): new window, and rename window (opens a prompt —
+    // summon the keyboard so you can type the name).
+    { label: '^Bc', seq: '\x02c', wide: true },
+    { label: '^B,', seq: '\x02,', focus: true, wide: true },
     { label: '⌨', act: 'kbd', wide: true },
 ];
 
@@ -53,7 +58,7 @@ export class KeyBar extends Component<Props> {
 
     private press(k: Key) {
         if (k.act === 'kbd') this.props.onToggleKeyboard();
-        else this.props.onKey(k.seq as string, k.blur);
+        else this.props.onKey(k.seq as string, k.blur, k.focus);
     }
 
     render() {
