@@ -117,12 +117,9 @@ body {
     grid-template-columns: repeat(3, 44px);
     grid-auto-rows: 38px;
     grid-template-areas:
-      "ka-kbd ka-up ka-clip"
+      "ka-up . ka-clip"
       "ka-left ka-down ka-right";
     gap: 6px;
-  }
-  .keybar-arrows .ka-kbd {
-    grid-area: ka-kbd;
   }
   .keybar-arrows .ka-clip {
     grid-area: ka-clip;

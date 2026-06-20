@@ -81,13 +81,7 @@ export class Terminal extends Component<Props, State> {
                         </label>
                     </Modal>
                 </div>
-                <KeyBar
-                    armed={armed}
-                    onKey={this.sendKey}
-                    onMod={this.toggleMod}
-                    onToggleKeyboard={this.toggleKeyboard}
-                    onUpload={this.triggerUpload}
-                />
+                <KeyBar armed={armed} onKey={this.sendKey} onMod={this.toggleMod} onUpload={this.triggerUpload} />
                 <input
                     ref={c => (this.fileInput = c as HTMLInputElement)}
                     type="file"
@@ -266,16 +260,6 @@ export class Terminal extends Component<Props, State> {
         this.xterm.sendData(data);
         if (blur) window.term?.blur();
         else if (focus) window.term?.focus();
-    }
-
-    @bind
-    private toggleKeyboard() {
-        const active = document.activeElement as HTMLElement | null;
-        if (active?.classList.contains('xterm-helper-textarea')) {
-            active.blur();
-        } else {
-            window.term?.focus();
-        }
     }
 
     // Tame the iOS soft keyboard for terminal use: kill autocorrect /

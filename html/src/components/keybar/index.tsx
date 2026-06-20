@@ -5,7 +5,6 @@ export type Mod = 'ctrl' | 'prefix';
 interface Props {
     onKey: (data: string, blur?: boolean, focus?: boolean) => void;
     onMod: (mod: Mod) => void;
-    onToggleKeyboard: () => void;
     onUpload: () => void;
     armed: '' | Mod;
 }
@@ -13,7 +12,7 @@ interface Props {
 interface Key {
     label: string;
     seq?: string;
-    act?: 'kbd' | 'upload';
+    act?: 'upload';
     mod?: Mod;
     blur?: boolean;
     focus?: boolean;
@@ -21,7 +20,8 @@ interface Key {
 
 // Non-arrow keys — they wrap into rows (no horizontal scroll). The arrows are a
 // fixed inverted-T cluster pinned to the right, like a standard keyboard.
-// (Scrollback scrolling is done by swiping the terminal — see Terminal.setupTouch.)
+// (No Spc/⌨ keys: the native keyboard has space, and tapping the terminal
+// summons it. Scrollback scrolling is done by swiping — see Terminal.setupTouch.)
 const MAIN: Key[] = [
     { label: 'Esc', seq: '\x1b' },
     { label: 'Tab', seq: '\t' },
@@ -31,13 +31,11 @@ const MAIN: Key[] = [
     { label: '^B', mod: 'prefix' },
     { label: '^Bp', seq: '\x02p' },
     { label: '^Bn', seq: '\x02n' },
-    { label: 'Spc', seq: ' ' },
     { label: '/', seq: '/' },
     { label: '@', seq: '@' },
 ];
 
-// Right cluster: a 3x2 block — ⌨ / ↑ / 📎 on top, ← ↓ → below.
-const KBD: Key = { label: '⌨', act: 'kbd' };
+// Right cluster: ↑ and 📎 on top, ← ↓ → below.
 const CLIP: Key = { label: '📎', act: 'upload' };
 const UP: Key = { label: '↑', seq: '\x1b[A' };
 const LEFT: Key = { label: '←', seq: '\x1b[D' };
@@ -50,7 +48,6 @@ export class KeyBar extends Component<Props> {
 
     private press(k: Key) {
         if (k.mod) this.props.onMod(k.mod);
-        else if (k.act === 'kbd') this.props.onToggleKeyboard();
         else if (k.act === 'upload') this.props.onUpload();
         else this.props.onKey(k.seq as string, k.blur, k.focus);
     }
@@ -70,7 +67,6 @@ export class KeyBar extends Component<Props> {
             <div id="keybar">
                 <div class="keybar-main">{MAIN.map(k => this.renderKey(k))}</div>
                 <div class="keybar-arrows">
-                    {this.renderKey(KBD, 'ka-kbd')}
                     {this.renderKey(UP, 'ka-up')}
                     {this.renderKey(CLIP, 'ka-clip')}
                     {this.renderKey(LEFT, 'ka-left')}
