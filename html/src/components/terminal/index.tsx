@@ -1,5 +1,6 @@
 import { bind } from 'decko';
 import { Component, h } from 'preact';
+import { createPortal } from 'preact/compat';
 import { Xterm, XtermOptions } from './xterm';
 
 import '@xterm/xterm/css/xterm.css';
@@ -62,14 +63,16 @@ export class Terminal extends Component<Props, State> {
     render({ id }: Props, { modal, armed, upload, uploadPct }: State) {
         return (
             <div id="terminal-root" ref={c => (this.root = c as HTMLElement)}>
-                {upload && (
-                    <div id="upload-toast">
-                        <div class="upload-msg">{upload}</div>
-                        <div class="upload-track">
-                            <div class="upload-fill" style={`width:${uploadPct}%`} />
-                        </div>
-                    </div>
-                )}
+                {upload &&
+                    createPortal(
+                        <div id="upload-toast">
+                            <div class="upload-msg">{upload}</div>
+                            <div class="upload-track">
+                                <div class="upload-fill" style={`width:${uploadPct}%`} />
+                            </div>
+                        </div>,
+                        document.body
+                    )}
                 <div id={id} ref={c => (this.container = c as HTMLElement)}>
                     <Modal show={modal}>
                         <label class="file-label">

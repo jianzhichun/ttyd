@@ -44,14 +44,16 @@ body {
 
 // Upload toast + progress bar (📎 button / Ctrl+V paste). Floats top-center over
 // the terminal; shown on desktop and mobile alike.
+// Portaled to <body> (NOT inside #terminal-root, whose will-change:transform
+// would make it the containing block and stretch this abspos box to full screen).
 #upload-toast {
-  position: absolute;
+  position: fixed;
   top: 8px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;
   min-width: 200px;
-  max-width: 80%;
+  max-width: 80vw;
   padding: 8px 12px;
   background: rgba(28, 28, 28, 0.95);
   border: 1px solid #555;
