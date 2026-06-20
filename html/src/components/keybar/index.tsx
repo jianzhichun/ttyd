@@ -6,13 +6,14 @@ interface Props {
     onKey: (data: string, blur?: boolean, focus?: boolean) => void;
     onMod: (mod: Mod) => void;
     onToggleKeyboard: () => void;
+    onUpload: () => void;
     armed: '' | Mod;
 }
 
 interface Key {
     label: string;
     seq?: string;
-    act?: 'kbd';
+    act?: 'kbd' | 'upload';
     mod?: Mod;
     blur?: boolean;
     focus?: boolean;
@@ -33,9 +34,11 @@ const MAIN: Key[] = [
     { label: 'Spc', seq: ' ' },
     { label: '/', seq: '/' },
     { label: '@', seq: '@' },
-    { label: '⌨', act: 'kbd' },
 ];
 
+// Right cluster: a 3x2 block — ⌨ / ↑ / 📎 on top, ← ↓ → below.
+const KBD: Key = { label: '⌨', act: 'kbd' };
+const CLIP: Key = { label: '📎', act: 'upload' };
 const UP: Key = { label: '↑', seq: '\x1b[A' };
 const LEFT: Key = { label: '←', seq: '\x1b[D' };
 const DOWN: Key = { label: '↓', seq: '\x1b[B' };
@@ -48,6 +51,7 @@ export class KeyBar extends Component<Props> {
     private press(k: Key) {
         if (k.mod) this.props.onMod(k.mod);
         else if (k.act === 'kbd') this.props.onToggleKeyboard();
+        else if (k.act === 'upload') this.props.onUpload();
         else this.props.onKey(k.seq as string, k.blur, k.focus);
     }
 
@@ -66,7 +70,9 @@ export class KeyBar extends Component<Props> {
             <div id="keybar">
                 <div class="keybar-main">{MAIN.map(k => this.renderKey(k))}</div>
                 <div class="keybar-arrows">
+                    {this.renderKey(KBD, 'ka-kbd')}
                     {this.renderKey(UP, 'ka-up')}
+                    {this.renderKey(CLIP, 'ka-clip')}
                     {this.renderKey(LEFT, 'ka-left')}
                     {this.renderKey(DOWN, 'ka-down')}
                     {this.renderKey(RIGHT, 'ka-right')}

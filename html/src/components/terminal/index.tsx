@@ -21,6 +21,8 @@ export class Terminal extends Component<Props, State> {
     private xterm: Xterm;
     private disposeViewport?: () => void;
     private disposeTap?: () => void;
+    private disposePaste?: () => void;
+    private fileInput?: HTMLInputElement;
     private disarmTimer?: number;
 
     state: State = { modal: false, armed: '' };
@@ -38,11 +40,13 @@ export class Terminal extends Component<Props, State> {
         this.hardenInput();
         this.setupViewport();
         this.setupTouch();
+        this.setupPaste();
     }
 
     componentWillUnmount() {
         this.disposeViewport?.();
         this.disposeTap?.();
+        this.disposePaste?.();
         if (this.disarmTimer) clearTimeout(this.disarmTimer);
         this.xterm.dispose();
     }
@@ -63,9 +67,74 @@ export class Terminal extends Component<Props, State> {
                     onKey={this.sendKey}
                     onMod={this.toggleMod}
                     onToggleKeyboard={this.toggleKeyboard}
+                    onUpload={this.triggerUpload}
+                />
+                <input
+                    ref={c => (this.fileInput = c as HTMLInputElement)}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    style="display:none"
+                    onChange={this.onFilePicked}
                 />
             </div>
         );
+    }
+
+    // ---- image upload (📎 button / Ctrl+V paste) ------------------------------
+    // Upload the blob to the same-origin __ccupload endpoint (homevm writes it to
+    // /tmp/cc-paste and returns the path), then drop the path into CC's input so
+    // CC can Read the image. Replaces the manual cc-upload (trzsz) flow.
+    @bind
+    private triggerUpload() {
+        this.fileInput?.click();
+    }
+
+    @bind
+    private onFilePicked(e: Event) {
+        const input = e.target as HTMLInputElement;
+        const files = input.files;
+        if (files) for (let i = 0; i < files.length; i++) this.uploadAndInject(files[i]);
+        input.value = ''; // allow re-picking the same file
+    }
+
+    private async uploadAndInject(blob: Blob) {
+        try {
+            const url = new URL('__ccupload', window.location.href).href;
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+                body: blob,
+            });
+            if (!resp.ok) return;
+            const { path } = await resp.json();
+            if (path) this.xterm.sendData(path + ' ');
+        } catch {
+            // upload failed (offline / endpoint down) — silently ignore
+        }
+    }
+
+    // Desktop Ctrl+V of an image: capture the blob before xterm sees the paste.
+    @bind
+    private setupPaste() {
+        const onPaste = (e: ClipboardEvent) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            let handled = false;
+            for (let i = 0; i < items.length; i++) {
+                const it = items[i];
+                if (it.kind === 'file' && it.type.startsWith('image/')) {
+                    const f = it.getAsFile();
+                    if (f) {
+                        this.uploadAndInject(f);
+                        handled = true;
+                    }
+                }
+            }
+            if (handled) e.preventDefault(); // don't let image bytes reach xterm as garbage
+        };
+        document.addEventListener('paste', onPaste, true); // capture: run before xterm's handler
+        this.disposePaste = () => document.removeEventListener('paste', onPaste, true);
     }
 
     // ---- sticky modifiers (Ctrl / tmux prefix) --------------------------------
