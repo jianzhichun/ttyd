@@ -37,7 +37,7 @@ export class Terminal extends Component<Props, State> {
         this.xterm.connect();
         this.hardenInput();
         this.setupViewport();
-        this.setupTapClick();
+        this.setupTouch();
     }
 
     componentWillUnmount() {
@@ -162,37 +162,63 @@ export class Terminal extends Component<Props, State> {
         };
     }
 
-    // Tap-to-select like a desktop mouse click: xterm doesn't forward a touch
-    // tap to tmux, so synthesize an SGR left-click at the tapped cell. With tmux
-    // `mouse on` this selects the pane under the tap, or switches window when you
-    // tap a window name in the bottom status bar. A drag is left alone.
+    // Touch input forwarded to tmux (mouse on), since xterm doesn't forward touch:
+    //  - a tap  -> SGR left-click at the cell: selects the pane, or switches
+    //    window when you tap a window name in the bottom status bar.
+    //  - a vertical drag -> SGR wheel notches: scrolls tmux scrollback like a
+    //    desktop mouse wheel (finger down = into history, finger up = toward newest).
     @bind
-    private setupTapClick() {
+    private setupTouch() {
         const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
         if (!coarse) return;
         const el = this.container;
+        const STEP = 24; // px of vertical drag per wheel notch
         let sx = 0;
         let sy = 0;
+        let lastY = 0;
         let single = false;
+        let scrolled = false;
 
         const onStart = (e: TouchEvent) => {
             single = e.touches.length === 1;
             sx = e.touches[0].clientX;
             sy = e.touches[0].clientY;
+            lastY = sy;
+            scrolled = false;
+        };
+        const onMove = (e: TouchEvent) => {
+            if (!single || e.touches.length !== 1) return;
+            const y = e.touches[0].clientY;
+            while (y - lastY >= STEP) {
+                this.sendWheel(64); // finger down -> wheel up -> into history
+                lastY += STEP;
+                scrolled = true;
+            }
+            while (lastY - y >= STEP) {
+                this.sendWheel(65); // finger up -> wheel down -> toward newest
+                lastY -= STEP;
+                scrolled = true;
+            }
         };
         const onEnd = (e: TouchEvent) => {
-            if (!single || e.changedTouches.length !== 1) return;
+            if (!single || scrolled || e.changedTouches.length !== 1) return;
             const t = e.changedTouches[0];
-            if (Math.abs(t.clientX - sx) + Math.abs(t.clientY - sy) > 10) return; // drag, not a tap
+            if (Math.abs(t.clientX - sx) + Math.abs(t.clientY - sy) > 10) return; // a drag, not a tap
             this.sendClick(t.clientX, t.clientY);
         };
 
         el.addEventListener('touchstart', onStart, { passive: true });
+        el.addEventListener('touchmove', onMove, { passive: true });
         el.addEventListener('touchend', onEnd, { passive: true });
         this.disposeTap = () => {
             el.removeEventListener('touchstart', onStart);
+            el.removeEventListener('touchmove', onMove);
             el.removeEventListener('touchend', onEnd);
         };
+    }
+
+    private sendWheel(button: number) {
+        this.xterm.sendData(`\x1b[<${button};2;2M`);
     }
 
     // Translate a viewport tap into a terminal cell and emit an SGR left-click

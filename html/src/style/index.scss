@@ -48,26 +48,61 @@ body {
 }
 
 @media (pointer: coarse) {
+  // Multi-row, no horizontal scroll: main keys wrap on the left, the arrow
+  // cluster (inverted-T) is pinned to the right like a standard keyboard.
   #keybar {
     display: flex;
     flex: 0 0 auto;
-    gap: 6px;
+    align-items: flex-start;
+    gap: 8px;
     padding: 6px 8px;
     padding-bottom: calc(6px + env(safe-area-inset-bottom));
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
     background: #1c1c1c;
     border-top: 1px solid #000;
     user-select: none;
     -webkit-user-select: none;
   }
 
+  .keybar-main {
+    flex: 1 1 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+  }
+
+  .keybar-arrows {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 44px);
+    grid-auto-rows: 38px;
+    grid-template-areas:
+      ". ka-up ."
+      "ka-left ka-down ka-right";
+    gap: 6px;
+  }
+  .keybar-arrows .ka-up {
+    grid-area: ka-up;
+  }
+  .keybar-arrows .ka-left {
+    grid-area: ka-left;
+  }
+  .keybar-arrows .ka-down {
+    grid-area: ka-down;
+  }
+  .keybar-arrows .ka-right {
+    grid-area: ka-right;
+  }
+  .keybar-arrows .keybar-key {
+    width: 100%;
+    min-width: 0;
+  }
+
   .keybar-key {
     flex: 0 0 auto;
     min-width: 44px;
-    height: 40px;
-    padding: 0 12px;
+    height: 38px;
+    padding: 0 10px;
     font-size: 15px;
     font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
     color: #d2d2d2;
@@ -76,10 +111,6 @@ body {
     border-radius: 6px;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
-  }
-
-  .keybar-key.keybar-wide {
-    min-width: 56px;
   }
 
   .keybar-key:active {

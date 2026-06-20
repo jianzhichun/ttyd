@@ -3,12 +3,8 @@ import { h, Component } from 'preact';
 export type Mod = 'ctrl' | 'prefix';
 
 interface Props {
-    // send a raw byte sequence to the PTY; blur=true hides the soft keyboard
-    // afterwards (scroll keys), focus=true summons it.
     onKey: (data: string, blur?: boolean, focus?: boolean) => void;
-    // arm/disarm a sticky modifier (applied to the next typed key)
     onMod: (mod: Mod) => void;
-    // summon / dismiss the soft keyboard
     onToggleKeyboard: () => void;
     armed: '' | Mod;
 }
@@ -20,37 +16,28 @@ interface Key {
     mod?: Mod;
     blur?: boolean;
     focus?: boolean;
-    wide?: boolean;
 }
 
-// One SGR mouse wheel notch (tmux `mouse on` turns this into a scrollback
-// scroll). 64 = wheel-up, 65 = wheel-down; coords just need to land in a pane.
-const WHEEL_UP = '\x1b[<64;2;2M'.repeat(3);
-const WHEEL_DOWN = '\x1b[<65;2;2M'.repeat(3);
-
-// Streamlined mobile bar for driving full-screen TUIs (e.g. Claude Code).
-// Direct keys the soft keyboard lacks, plus two sticky modifiers (Ctrl / tmux
-// prefix) that fold every Ctrl-combo and prefix-combo into one key each.
-const KEYS: Key[] = [
-    { label: 'Esc', seq: '\x1b', wide: true },
+// Non-arrow keys — they wrap into rows (no horizontal scroll). The arrows are a
+// fixed inverted-T cluster pinned to the right, like a standard keyboard.
+// (Scrollback scrolling is done by swiping the terminal — see Terminal.setupTouch.)
+const MAIN: Key[] = [
+    { label: 'Esc', seq: '\x1b' },
     { label: 'Tab', seq: '\t' },
     { label: '⇧⇥', seq: '\x1b[Z' },
-    { label: '←', seq: '\x1b[D' },
-    { label: '↑', seq: '\x1b[A' },
-    { label: '↓', seq: '\x1b[B' },
-    { label: '→', seq: '\x1b[C' },
-    // literal space — iOS Pinyin IME swallows the keyboard space; this bypasses it
-    { label: 'Spc', seq: ' ', wide: true },
-    { label: '⇞', seq: WHEEL_UP, blur: true },
-    { label: '⇟', seq: WHEEL_DOWN, blur: true },
     { label: '^C', seq: '\x03' },
-    { label: 'Ctrl', mod: 'ctrl', wide: true },
-    { label: '^B', mod: 'prefix', wide: true },
-    // one-tap window switch — the entries in the bottom status bar (prev/next)
-    { label: '^Bp', seq: '\x02p', wide: true },
-    { label: '^Bn', seq: '\x02n', wide: true },
-    { label: '⌨', act: 'kbd', wide: true },
+    { label: 'Ctrl', mod: 'ctrl' },
+    { label: '^B', mod: 'prefix' },
+    { label: '^Bp', seq: '\x02p' },
+    { label: '^Bn', seq: '\x02n' },
+    { label: 'Spc', seq: ' ' },
+    { label: '⌨', act: 'kbd' },
 ];
+
+const UP: Key = { label: '↑', seq: '\x1b[A' };
+const LEFT: Key = { label: '←', seq: '\x1b[D' };
+const DOWN: Key = { label: '↓', seq: '\x1b[B' };
+const RIGHT: Key = { label: '→', seq: '\x1b[C' };
 
 export class KeyBar extends Component<Props> {
     // Prevent the button from stealing focus from the terminal's hidden textarea.
@@ -62,26 +49,26 @@ export class KeyBar extends Component<Props> {
         else this.props.onKey(k.seq as string, k.blur, k.focus);
     }
 
-    render({ armed }: Props) {
+    private renderKey(k: Key, area = '') {
+        const cls =
+            'keybar-key' + (area ? ' ' + area : '') + (k.mod && this.props.armed === k.mod ? ' keybar-armed' : '');
+        return (
+            <button type="button" tabIndex={-1} class={cls} onMouseDown={this.hold} onClick={() => this.press(k)}>
+                {k.label}
+            </button>
+        );
+    }
+
+    render() {
         return (
             <div id="keybar">
-                {KEYS.map(k => {
-                    const cls =
-                        'keybar-key' +
-                        (k.wide ? ' keybar-wide' : '') +
-                        (k.mod && armed === k.mod ? ' keybar-armed' : '');
-                    return (
-                        <button
-                            type="button"
-                            tabIndex={-1}
-                            class={cls}
-                            onMouseDown={this.hold}
-                            onClick={() => this.press(k)}
-                        >
-                            {k.label}
-                        </button>
-                    );
-                })}
+                <div class="keybar-main">{MAIN.map(k => this.renderKey(k))}</div>
+                <div class="keybar-arrows">
+                    {this.renderKey(UP, 'ka-up')}
+                    {this.renderKey(LEFT, 'ka-left')}
+                    {this.renderKey(DOWN, 'ka-down')}
+                    {this.renderKey(RIGHT, 'ka-right')}
+                </div>
             </div>
         );
     }
