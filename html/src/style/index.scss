@@ -107,8 +107,8 @@ body {
   .keybar-key {
     min-width: 0; // allow the cell to shrink so the label can ellipsis
     height: 100%;
-    padding: 0 6px;
-    font-size: 15px;
+    padding: 0 3px;
+    font-size: 14px;
     font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
     color: #d2d2d2;
     background: #3a3a3a;
@@ -132,28 +132,27 @@ body {
     border-color: #00a7aa;
   }
 
-  // one grid cell holding ↑ stacked above ↓
-  .keybar-updown {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    height: 100%;
-    min-width: 0;
-
-    button {
-      flex: 1;
-      min-width: 0;
-      padding: 0;
-      font-size: 13px;
-      color: #d2d2d2;
-      background: #3a3a3a;
-      border: 1px solid #555;
-      border-radius: 5px;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-    }
-    button:active {
-      background: #555;
-    }
+  // Explicit placement: 📎 top-right; arrow cross with ↑ directly above ↓.
+  //   row 1:            … ↑ 📎
+  //   row 2:            … ← ↓ →
+  .ka-clip {
+    grid-column: 7;
+    grid-row: 1;
+  }
+  .ka-up {
+    grid-column: 6;
+    grid-row: 1;
+  }
+  .ka-left {
+    grid-column: 5;
+    grid-row: 2;
+  }
+  .ka-down {
+    grid-column: 6;
+    grid-row: 2;
+  }
+  .ka-right {
+    grid-column: 7;
+    grid-row: 2;
   }
 }

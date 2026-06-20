@@ -18,10 +18,12 @@ interface Key {
     focus?: boolean;
 }
 
-// Uniform 7-per-row grid, equal-width cells, long labels truncated (ellipsis).
-// 11 function keys fill row 1 + the start of row 2; the row ends with ← [↑/↓] →
-// where ↑ is stacked above ↓ in a single cell, so it all fits in 2 rows.
-// (No Spc/⌨: the native keyboard has space, and tapping the terminal summons it.
+// Uniform 7-per-row grid, equal-width full-size cells, long labels truncated.
+// 10 function keys + a proper arrow cross (↑ above ↓, ← ↓ → on the bottom row)
+// = exactly 2 rows of 7. Each arrow is a full cell (easy to tap). Arrows are
+// placed explicitly (CSS grid-area); the function keys auto-flow into the rest.
+// Prev-window dropped as a dedicated key — still reachable via the sticky ^B
+// then p. (No Spc/⌨: native kbd has space, tapping the terminal summons it.
 // Scrollback scrolling is done by swiping — see Terminal.setupTouch.)
 const FUNC: Key[] = [
     { label: 'Esc', seq: '\x1b' },
@@ -30,16 +32,16 @@ const FUNC: Key[] = [
     { label: '^C', seq: '\x03' },
     { label: 'Ctrl', mod: 'ctrl' },
     { label: '^B', mod: 'prefix' },
-    { label: '^Bp', seq: '\x02p' },
     { label: '^Bn', seq: '\x02n' },
-    { label: '/', seq: '/' },
-    { label: '@', seq: '@' },
-    { label: '📎', act: 'upload' },
+    // / and @ start a slash-command / @-mention you keep typing → summon keyboard
+    { label: '/', seq: '/', focus: true },
+    { label: '@', seq: '@', focus: true },
 ];
 
+const CLIP: Key = { label: '📎', act: 'upload' }; // top-right corner
 const UP: Key = { label: '↑', seq: '\x1b[A' };
-const DOWN: Key = { label: '↓', seq: '\x1b[B' };
 const LEFT: Key = { label: '←', seq: '\x1b[D' };
+const DOWN: Key = { label: '↓', seq: '\x1b[B' };
 const RIGHT: Key = { label: '→', seq: '\x1b[C' };
 
 export class KeyBar extends Component<Props> {
@@ -52,8 +54,9 @@ export class KeyBar extends Component<Props> {
         else this.props.onKey(k.seq as string, k.blur, k.focus);
     }
 
-    private renderKey(k: Key) {
-        const cls = 'keybar-key' + (k.mod && this.props.armed === k.mod ? ' keybar-armed' : '');
+    private renderKey(k: Key, area = '') {
+        const cls =
+            'keybar-key' + (area ? ' ' + area : '') + (k.mod && this.props.armed === k.mod ? ' keybar-armed' : '');
         return (
             <button type="button" tabIndex={-1} class={cls} onMouseDown={this.hold} onClick={() => this.press(k)}>
                 {k.label}
@@ -65,16 +68,11 @@ export class KeyBar extends Component<Props> {
         return (
             <div id="keybar">
                 {FUNC.map(k => this.renderKey(k))}
-                {this.renderKey(LEFT)}
-                <div class="keybar-updown">
-                    <button type="button" tabIndex={-1} onMouseDown={this.hold} onClick={() => this.press(UP)}>
-                        ↑
-                    </button>
-                    <button type="button" tabIndex={-1} onMouseDown={this.hold} onClick={() => this.press(DOWN)}>
-                        ↓
-                    </button>
-                </div>
-                {this.renderKey(RIGHT)}
+                {this.renderKey(CLIP, 'ka-clip')}
+                {this.renderKey(UP, 'ka-up')}
+                {this.renderKey(LEFT, 'ka-left')}
+                {this.renderKey(DOWN, 'ka-down')}
+                {this.renderKey(RIGHT, 'ka-right')}
             </div>
         );
     }
