@@ -119,18 +119,10 @@ body {
     text-overflow: ellipsis;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
-    transition:
-      transform 0.05s ease,
-      background 0.05s ease,
-      border-color 0.05s ease;
   }
 
-  // tactile press feedback: shrink + cyan flash
   .keybar-key:active {
-    background: #00a7aa;
-    color: #001b1b;
-    border-color: #00a7aa;
-    transform: scale(0.9);
+    background: #555;
   }
 
   // armed sticky modifier (Ctrl / ^B) — highlighted until the next key
