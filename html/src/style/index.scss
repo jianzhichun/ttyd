@@ -156,3 +156,19 @@ body {
     grid-row: 2;
   }
 }
+
+// Wide touch screens (landscape phone / unfolded foldable): plenty of width, so
+// drop to a single row of 14 — arrows go flat (← ↑ ↓ →), no stacked cross.
+@media (pointer: coarse) and (min-width: 760px) {
+  #keybar {
+    grid-template-columns: repeat(14, 1fr);
+  }
+  .ka-clip,
+  .ka-up,
+  .ka-left,
+  .ka-down,
+  .ka-right {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}

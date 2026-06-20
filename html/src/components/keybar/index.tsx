@@ -71,8 +71,8 @@ export class KeyBar extends Component<Props> {
             <div id="keybar">
                 {FUNC.map(k => this.renderKey(k))}
                 {this.renderKey(CLIP, 'ka-clip')}
-                {this.renderKey(UP, 'ka-up')}
                 {this.renderKey(LEFT, 'ka-left')}
+                {this.renderKey(UP, 'ka-up')}
                 {this.renderKey(DOWN, 'ka-down')}
                 {this.renderKey(RIGHT, 'ka-right')}
             </div>
