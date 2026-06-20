@@ -140,9 +140,10 @@ export class Terminal extends Component<Props, State> {
         ta.setAttribute('spellcheck', 'false');
     }
 
-    // On touch devices the soft keyboard shrinks the visual viewport without
-    // changing the layout viewport, so the prompt ends up hidden behind it.
-    // Pin the terminal root to visualViewport.height and refit on every change.
+    // The soft keyboard floats over the page (interactive-widget=overlays-content;
+    // iOS does this natively too). Rather than resize/reflow the terminal grid,
+    // slide the whole terminal+keybar up by the keyboard height so the prompt and
+    // the key bar sit just above the keyboard. No refit -> no reflow jank.
     @bind
     private setupViewport() {
         const vv = window.visualViewport;
@@ -150,8 +151,8 @@ export class Terminal extends Component<Props, State> {
         if (!vv || !coarse) return;
 
         const onChange = () => {
-            this.root.style.height = `${vv.height}px`;
-            this.xterm.fit();
+            const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+            this.root.style.transform = kb > 1 ? `translateY(${-kb}px)` : '';
         };
         vv.addEventListener('resize', onChange);
         vv.addEventListener('scroll', onChange);
@@ -159,6 +160,7 @@ export class Terminal extends Component<Props, State> {
         this.disposeViewport = () => {
             vv.removeEventListener('resize', onChange);
             vv.removeEventListener('scroll', onChange);
+            this.root.style.transform = '';
         };
     }
 
@@ -186,8 +188,12 @@ export class Terminal extends Component<Props, State> {
             if (moved > 12) return; // a drag/selection, not a tap
             const focused = document.activeElement?.classList.contains('xterm-helper-textarea');
             if (!focused) return;
-            const rect = el.getBoundingClientRect();
-            if (t.clientY - rect.top < rect.height * 0.7) window.term?.blur();
+            // zone relative to the visible area (root may be translated up over
+            // the floating keyboard): tap in the upper 70% dismisses.
+            const vv = window.visualViewport;
+            const top = vv ? vv.offsetTop : 0;
+            const h = vv ? vv.height : el.getBoundingClientRect().height;
+            if (t.clientY < top + h * 0.7) window.term?.blur();
         };
 
         el.addEventListener('touchstart', onStart, { passive: true });
