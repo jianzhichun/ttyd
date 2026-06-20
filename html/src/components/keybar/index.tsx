@@ -39,6 +39,8 @@ const KEYS: Key[] = [
     { label: '↑', seq: '\x1b[A' },
     { label: '↓', seq: '\x1b[B' },
     { label: '→', seq: '\x1b[C' },
+    // literal space — iOS Pinyin IME swallows the keyboard space; this bypasses it
+    { label: 'Spc', seq: ' ', wide: true },
     { label: '⇞', seq: WHEEL_UP, blur: true },
     { label: '⇟', seq: WHEEL_DOWN, blur: true },
     { label: '^C', seq: '\x03' },

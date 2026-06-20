@@ -5,7 +5,6 @@ import { Xterm, XtermOptions } from './xterm';
 import '@xterm/xterm/css/xterm.css';
 import { Modal } from '../modal';
 import { KeyBar, Mod } from '../keybar';
-import { OrientationHint } from '../orient';
 
 interface Props extends XtermOptions {
     id: string;
@@ -38,7 +37,7 @@ export class Terminal extends Component<Props, State> {
         this.xterm.connect();
         this.hardenInput();
         this.setupViewport();
-        this.setupTapDismiss();
+        this.setupTapClick();
     }
 
     componentWillUnmount() {
@@ -65,7 +64,6 @@ export class Terminal extends Component<Props, State> {
                     onMod={this.toggleMod}
                     onToggleKeyboard={this.toggleKeyboard}
                 />
-                <OrientationHint />
             </div>
         );
     }
@@ -164,11 +162,12 @@ export class Terminal extends Component<Props, State> {
         };
     }
 
-    // Mobile keyboard dismiss: a tap in the upper (transcript) area hides the
-    // soft keyboard so you can read output; tapping near the bottom prompt
-    // re-focuses to type. Only a real tap (no drag/selection) counts.
+    // Tap-to-select like a desktop mouse click: xterm doesn't forward a touch
+    // tap to tmux, so synthesize an SGR left-click at the tapped cell. With tmux
+    // `mouse on` this selects the pane under the tap, or switches window when you
+    // tap a window name in the bottom status bar. A drag is left alone.
     @bind
-    private setupTapDismiss() {
+    private setupTapClick() {
         const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
         if (!coarse) return;
         const el = this.container;
@@ -184,16 +183,8 @@ export class Terminal extends Component<Props, State> {
         const onEnd = (e: TouchEvent) => {
             if (!single || e.changedTouches.length !== 1) return;
             const t = e.changedTouches[0];
-            const moved = Math.abs(t.clientX - sx) + Math.abs(t.clientY - sy);
-            if (moved > 12) return; // a drag/selection, not a tap
-            const focused = document.activeElement?.classList.contains('xterm-helper-textarea');
-            if (!focused) return;
-            // zone relative to the visible area (root may be translated up over
-            // the floating keyboard): tap in the upper 70% dismisses.
-            const vv = window.visualViewport;
-            const top = vv ? vv.offsetTop : 0;
-            const h = vv ? vv.height : el.getBoundingClientRect().height;
-            if (t.clientY < top + h * 0.7) window.term?.blur();
+            if (Math.abs(t.clientX - sx) + Math.abs(t.clientY - sy) > 10) return; // drag, not a tap
+            this.sendClick(t.clientX, t.clientY);
         };
 
         el.addEventListener('touchstart', onStart, { passive: true });
@@ -202,6 +193,20 @@ export class Terminal extends Component<Props, State> {
             el.removeEventListener('touchstart', onStart);
             el.removeEventListener('touchend', onEnd);
         };
+    }
+
+    // Translate a viewport tap into a terminal cell and emit an SGR left-click
+    // (press + release). getBoundingClientRect is transform-aware, so this stays
+    // correct even when the root is translated up over the floating keyboard.
+    private sendClick(clientX: number, clientY: number) {
+        const term = window.term;
+        const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
+        if (!term || !screen) return;
+        const rect = screen.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        const col = Math.min(Math.max(Math.floor((clientX - rect.left) / (rect.width / term.cols)) + 1, 1), term.cols);
+        const row = Math.min(Math.max(Math.floor((clientY - rect.top) / (rect.height / term.rows)) + 1, 1), term.rows);
+        this.xterm.sendData(`\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`);
     }
 
     @bind
