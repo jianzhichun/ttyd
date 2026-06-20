@@ -159,6 +159,8 @@ export class Terminal extends Component<Props, State> {
             const xhr = new XMLHttpRequest();
             xhr.open('POST', new URL('__ccupload', window.location.href).href);
             xhr.setRequestHeader('Content-Type', blob.type || 'application/octet-stream');
+            const name = (blob as File).name;
+            if (name) xhr.setRequestHeader('X-CC-Filename', encodeURIComponent(name));
             xhr.upload.onprogress = e => {
                 if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
             };
@@ -188,16 +190,18 @@ export class Terminal extends Component<Props, State> {
         return n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(0)}MB` : `${(n / 1024).toFixed(0)}KB`;
     }
 
-    // Desktop Ctrl+V of an image: capture the blob before xterm sees the paste.
+    // Ctrl+V of one or more attachments: a screenshot, or files copied in the OS
+    // file manager (Finder/Explorer). Any file kind is accepted (not just images);
+    // CC can Read PDFs/text/etc. by the injected path.
     @bind
     private setupPaste() {
         const onPaste = (e: ClipboardEvent) => {
             const items = e.clipboardData?.items;
             if (!items) return;
-            const blobs: Blob[] = [];
+            const blobs: File[] = [];
             for (let i = 0; i < items.length; i++) {
                 const it = items[i];
-                if (it.kind === 'file' && it.type.startsWith('image/')) {
+                if (it.kind === 'file') {
                     const f = it.getAsFile();
                     if (f) blobs.push(f);
                 }

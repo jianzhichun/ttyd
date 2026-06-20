@@ -79,14 +79,12 @@ export class ZmodemAddon implements ITerminalAddon {
             dragInitTimeout: this.options.trzszDragInitTimeout,
         });
         const element = terminal.element as EventTarget;
+        // Drag-to-upload via trzsz is disabled on purpose: in the Claude Code +
+        // ttyd setup a dropped file turns into a trz transfer, which is unwanted.
+        // We keep preventDefault so a stray drop doesn't navigate the page away,
+        // but do nothing else — image/file upload goes through Ctrl+V / 📎 instead.
         this.addDisposableListener(element, 'dragover', event => event.preventDefault());
-        this.addDisposableListener(element, 'drop', event => {
-            event.preventDefault();
-            this.trzszFilter
-                .uploadFiles((event as DragEvent).dataTransfer?.items as DataTransferItemList)
-                .then(() => console.log('[ttyd] upload success'))
-                .catch(err => console.log('[ttyd] upload failed: ' + err));
-        });
+        this.addDisposableListener(element, 'drop', event => event.preventDefault());
         this.disposables.push(terminal.onResize(size => this.trzszFilter.setTerminalColumns(size.cols)));
     }
 
