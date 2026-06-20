@@ -44,6 +44,9 @@ const KEYS: Key[] = [
     { label: '^C', seq: '\x03' },
     { label: 'Ctrl', mod: 'ctrl', wide: true },
     { label: '^B', mod: 'prefix', wide: true },
+    // one-tap pane ops (no keyboard, no precise tapping): cycle pane / zoom
+    { label: '^Bo', seq: '\x02o', wide: true },
+    { label: '^Bz', seq: '\x02z', wide: true },
     { label: '⌨', act: 'kbd', wide: true },
 ];
 
