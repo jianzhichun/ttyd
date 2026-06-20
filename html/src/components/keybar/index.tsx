@@ -31,6 +31,8 @@ const MAIN: Key[] = [
     { label: '^Bp', seq: '\x02p' },
     { label: '^Bn', seq: '\x02n' },
     { label: 'Spc', seq: ' ' },
+    { label: '/', seq: '/' },
+    { label: '@', seq: '@' },
     { label: '⌨', act: 'kbd' },
 ];
 
