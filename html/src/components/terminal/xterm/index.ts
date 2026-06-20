@@ -5,7 +5,7 @@ import { CanvasAddon } from '@xterm/addon-canvas';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
+import { registerWrappedWebLinks } from './addons/wraplinks';
 import { ImageAddon } from '@xterm/addon-image';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { OverlayAddon } from './addons/overlay';
@@ -87,7 +87,6 @@ export class Xterm {
     private fitAddon = new FitAddon();
     private overlayAddon = new OverlayAddon();
     private clipboardAddon = new ClipboardAddon();
-    private webLinksAddon = new WebLinksAddon();
     private webglAddon?: WebglAddon;
     private canvasAddon?: CanvasAddon;
     private zmodemAddon?: ZmodemAddon;
@@ -159,7 +158,7 @@ export class Xterm {
     @bind
     public open(parent: HTMLElement) {
         this.terminal = new Terminal(this.options.termOptions);
-        const { terminal, fitAddon, overlayAddon, clipboardAddon, webLinksAddon } = this;
+        const { terminal, fitAddon, overlayAddon, clipboardAddon } = this;
         window.term = terminal as TtydTerminal;
         window.term.fit = () => {
             this.fitAddon.fit();
@@ -168,9 +167,9 @@ export class Xterm {
         terminal.loadAddon(fitAddon);
         terminal.loadAddon(overlayAddon);
         terminal.loadAddon(clipboardAddon);
-        terminal.loadAddon(webLinksAddon);
 
         terminal.open(parent);
+        this.register(registerWrappedWebLinks(terminal));
         fitAddon.fit();
     }
 
