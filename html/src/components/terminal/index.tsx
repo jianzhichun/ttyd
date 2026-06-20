@@ -4,7 +4,7 @@ import { Xterm, XtermOptions } from './xterm';
 
 import '@xterm/xterm/css/xterm.css';
 import { Modal } from '../modal';
-import { KeyBar } from '../keybar';
+import { KeyBar, Mod } from '../keybar';
 import { OrientationHint } from '../orient';
 
 interface Props extends XtermOptions {
@@ -13,6 +13,7 @@ interface Props extends XtermOptions {
 
 interface State {
     modal: boolean;
+    armed: '' | Mod;
 }
 
 export class Terminal extends Component<Props, State> {
@@ -21,6 +22,9 @@ export class Terminal extends Component<Props, State> {
     private xterm: Xterm;
     private disposeViewport?: () => void;
     private disposeTap?: () => void;
+    private disarmTimer?: number;
+
+    state: State = { modal: false, armed: '' };
 
     constructor(props: Props) {
         super();
@@ -30,6 +34,7 @@ export class Terminal extends Component<Props, State> {
     async componentDidMount() {
         await this.xterm.refreshToken();
         this.xterm.open(this.container);
+        this.xterm.inputHandler = this.handleInput; // route typed input through modifier logic
         this.xterm.connect();
         this.hardenInput();
         this.setupViewport();
@@ -39,10 +44,11 @@ export class Terminal extends Component<Props, State> {
     componentWillUnmount() {
         this.disposeViewport?.();
         this.disposeTap?.();
+        if (this.disarmTimer) clearTimeout(this.disarmTimer);
         this.xterm.dispose();
     }
 
-    render({ id }: Props, { modal }: State) {
+    render({ id }: Props, { modal, armed }: State) {
         return (
             <div id="terminal-root" ref={c => (this.root = c as HTMLElement)}>
                 <div id={id} ref={c => (this.container = c as HTMLElement)}>
@@ -53,19 +59,61 @@ export class Terminal extends Component<Props, State> {
                         </label>
                     </Modal>
                 </div>
-                <KeyBar onKey={this.sendKey} onToggleKeyboard={this.toggleKeyboard} />
+                <KeyBar
+                    armed={armed}
+                    onKey={this.sendKey}
+                    onMod={this.toggleMod}
+                    onToggleKeyboard={this.toggleKeyboard}
+                />
                 <OrientationHint />
             </div>
         );
     }
 
+    // ---- sticky modifiers (Ctrl / tmux prefix) --------------------------------
+    // Arming a modifier highlights it and summons the keyboard so the combining
+    // key can be typed; the next typed key (soft keyboard OR keybar) is then
+    // transformed and the modifier disarms. Auto-disarms after 6s if unused.
+    @bind
+    private toggleMod(mod: Mod) {
+        const next = this.state.armed === mod ? '' : mod;
+        this.setState({ armed: next });
+        if (this.disarmTimer) clearTimeout(this.disarmTimer);
+        if (next) {
+            window.term?.focus();
+            this.disarmTimer = window.setTimeout(() => this.setState({ armed: '' }), 6000);
+        }
+    }
+
+    private applyMod(data: string): string | null {
+        if (data.length !== 1) return null; // leave arrows/IME/paste untouched
+        if (this.state.armed === 'ctrl') return String.fromCharCode(data.charCodeAt(0) & 0x1f);
+        if (this.state.armed === 'prefix') return '\x02' + data; // tmux prefix + key
+        return null;
+    }
+
+    private consumeMod(data: string): string {
+        const t = this.applyMod(data);
+        if (this.disarmTimer) clearTimeout(this.disarmTimer);
+        this.setState({ armed: '' });
+        return t ?? data;
+    }
+
+    // soft-keyboard input path (wired into Xterm.onData)
+    @bind
+    private handleInput(data: string) {
+        this.xterm.sendData(this.state.armed ? this.consumeMod(data) : data);
+    }
+
     @bind
     private sendKey(data: string, blur?: boolean, focus?: boolean) {
+        if (this.state.armed) {
+            this.xterm.sendData(this.consumeMod(data));
+            return;
+        }
         // sendData goes straight to the socket and needs no focus, so a special
-        // key must NOT focus the textarea — otherwise every Esc/arrow/Ctrl tap
-        // re-summons the soft keyboard. blur=true (scroll keys) hides it; focus=
-        // true (keys that open a prompt, e.g. rename) summons it — the tap is a
-        // user gesture, so focus() is honored even on iOS.
+        // key must NOT focus the textarea — otherwise every Esc/arrow tap re-
+        // summons the keyboard. blur=true (scroll) hides it; focus=true summons.
         this.xterm.sendData(data);
         if (blur) window.term?.blur();
         else if (focus) window.term?.focus();

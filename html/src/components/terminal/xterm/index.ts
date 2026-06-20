@@ -102,6 +102,11 @@ export class Xterm {
     private doReconnect = true;
     private closeOnDisconnect = false;
 
+    // optional transform for typed input (sticky-modifier handling lives in the
+    // Preact layer); when set, all terminal.onData goes through it instead of
+    // straight to sendData.
+    public inputHandler?: (data: string) => void;
+
     private writeFunc = (data: ArrayBuffer) => this.writeData(new Uint8Array(data));
 
     constructor(
@@ -179,7 +184,7 @@ export class Xterm {
                 }
             })
         );
-        register(terminal.onData(data => sendData(data)));
+        register(terminal.onData(data => (this.inputHandler ? this.inputHandler(data) : sendData(data))));
         register(terminal.onBinary(data => sendData(Uint8Array.from(data, v => v.charCodeAt(0)))));
         register(
             terminal.onResize(({ cols, rows }) => {

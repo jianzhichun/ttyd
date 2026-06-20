@@ -75,6 +75,13 @@ body {
   .keybar-key:active {
     background: #555;
   }
+
+  // armed sticky modifier (Ctrl / ^B) — highlighted until the next key
+  .keybar-key.keybar-armed {
+    color: #001b1b;
+    background: #00a7aa;
+    border-color: #00a7aa;
+  }
 }
 
 // Landscape nudge overlay (narrow phones in portrait only; component-gated).
