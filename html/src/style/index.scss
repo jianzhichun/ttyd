@@ -6,6 +6,15 @@ body {
   overflow: hidden;
 }
 
+// Lock the page so the iOS soft keyboard can't auto-scroll the document on
+// focus — that scroll stacks on top of our keyboard-aware transform and leaves
+// a gap between the key bar and the keyboard ("撑开"). Pinned, only the
+// transform moves content, so the key bar sits flush above the keyboard.
+body {
+  position: fixed;
+  inset: 0;
+}
+
 #terminal-root {
   display: flex;
   flex-direction: column;
