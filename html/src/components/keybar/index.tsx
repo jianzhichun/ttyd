@@ -51,6 +51,8 @@ export class KeyBar extends Component<Props> {
     private hold = (e: Event) => e.preventDefault();
 
     private press(k: Key) {
+        // haptic tick where supported (Android); iOS Safari has no Vibration API
+        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(8);
         if (k.mod) this.props.onMod(k.mod);
         else if (k.act === 'upload') this.props.onUpload();
         else this.props.onKey(k.seq as string, k.blur, k.focus);
