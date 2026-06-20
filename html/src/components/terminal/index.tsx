@@ -200,7 +200,12 @@ export class Terminal extends Component<Props, State> {
                 }
             }
             if (blobs.length) {
-                e.preventDefault(); // don't let image bytes reach xterm as garbage
+                // Fully swallow the image paste: preventDefault stops the browser
+                // inserting it into xterm's helper textarea (which would flash a
+                // white box at the cursor), stopImmediatePropagation stops xterm's
+                // own paste listener from running on it at all.
+                e.preventDefault();
+                e.stopImmediatePropagation();
                 this.enqueue(blobs);
             }
         };
