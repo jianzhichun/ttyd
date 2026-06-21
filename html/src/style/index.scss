@@ -19,12 +19,17 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  will-change: transform;
+  // Terminal background, so the small gap the keyboard-aware lift can open
+  // between the terminal's bottom and the pinned key bar reads as terminal,
+  // not a stray strip. (#terminal-root itself is no longer transformed — the
+  // container and key bar are moved independently; see Terminal.setupViewport.)
+  background: #000;
 }
 
 #terminal-container {
   flex: 1 1 auto;
   min-height: 0;
+  will-change: transform;
   // NB: in the #terminal-root flex column, auto left/right margins would
   // defeat align-items:stretch and shrink-wrap the terminal (PC side gutters).
   align-self: stretch;
@@ -102,6 +107,7 @@ body {
     border-top: 1px solid #000;
     user-select: none;
     -webkit-user-select: none;
+    will-change: transform; // pinned above the keyboard via transform (setupViewport)
   }
 
   .keybar-key {

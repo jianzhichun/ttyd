@@ -273,27 +273,68 @@ export class Terminal extends Component<Props, State> {
         ta.setAttribute('spellcheck', 'false');
     }
 
-    // The soft keyboard floats over the page (interactive-widget=overlays-content;
-    // iOS does this natively too). Rather than resize/reflow the terminal grid,
-    // slide the whole terminal+keybar up by the keyboard height so the prompt and
-    // the key bar sit just above the keyboard. No refit -> no reflow jank.
+    // Keyboard-aware layout. The soft keyboard floats over the page (the grid is
+    // measured via visualViewport, which shrinks when the keyboard opens — hence
+    // interactive-widget=resizes-visual in template.html, NOT overlays-content,
+    // which would suppress that shrink and leave kb stuck at 0).
+    //
+    // We do NOT slide the whole terminal up by the keyboard height: Claude Code
+    // anchors its UI to the TOP, so when the conversation is short the input box
+    // sits high with blank rows below it — a blind full-height slide would shove
+    // the input off the top of the screen. Instead the two concerns are decoupled
+    // (pure CSS transforms, so no grid refit / reflow):
+    //   • the key bar is pinned just above the keyboard — it should always hug the
+    //     keyboard regardless of where the cursor is;
+    //   • the terminal is lifted only as much as needed to bring the *cursor* (the
+    //     input line) just above the key bar. Short content => ~no lift (input is
+    //     already visible); full screen => lift ≈ keyboard height, as before.
     @bind
     private setupViewport() {
         const vv = window.visualViewport;
         const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
         if (!vv || !coarse) return;
+        const keybar = this.root.querySelector('#keybar') as HTMLElement | null;
 
-        const onChange = () => {
+        const apply = () => {
             const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-            this.root.style.transform = kb > 1 ? `translateY(${-kb}px)` : '';
+            // key bar hugs the top edge of the keyboard
+            if (keybar) keybar.style.transform = kb > 1 ? `translateY(${-kb}px)` : '';
+            const term = window.term;
+            const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
+            if (kb <= 1 || !term || !screen || !keybar) {
+                this.container.style.transform = '';
+                return;
+            }
+            // cursor's bottom edge in the untranslated layout (offsetHeight is
+            // transform-independent, so this never feeds back on our own transform).
+            const cellH = screen.offsetHeight / (term.rows || 1);
+            const cursorBottom = 5 /* .terminal padding */ + (term.buffer.active.cursorY + 1) * cellH;
+            const keybarTop = window.innerHeight - kb - keybar.offsetHeight;
+            // lift just enough to leave one row of breathing room above the key bar
+            const lift = Math.max(0, cursorBottom - (keybarTop - Math.round(cellH)));
+            this.container.style.transform = lift > 0 ? `translateY(${-lift}px)` : '';
+        };
+
+        // coalesce bursts (keyboard slide animation, rapid cursor moves) to 1/frame
+        let raf = 0;
+        const onChange = () => {
+            if (raf) return;
+            raf = requestAnimationFrame(() => {
+                raf = 0;
+                apply();
+            });
         };
         vv.addEventListener('resize', onChange);
         vv.addEventListener('scroll', onChange);
-        onChange();
+        const cursorMove = window.term?.onCursorMove(onChange); // follow the input line as you type
+        apply();
         this.disposeViewport = () => {
+            if (raf) cancelAnimationFrame(raf);
             vv.removeEventListener('resize', onChange);
             vv.removeEventListener('scroll', onChange);
-            this.root.style.transform = '';
+            cursorMove?.dispose();
+            this.container.style.transform = '';
+            if (keybar) keybar.style.transform = '';
         };
     }
 
