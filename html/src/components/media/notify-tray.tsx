@@ -67,6 +67,12 @@ export class NotifyTray extends Component<unknown, State> {
     };
 
     private clear = () => {
+        fetch(new URL('__ccswitch', window.location.href).href, {
+            method: 'POST',
+            body: JSON.stringify({ clear: true }),
+        }).catch(() => {
+            /* ignore */
+        });
         notifyStore.clear();
         this.setState({ open: false });
     };
