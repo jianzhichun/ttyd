@@ -6,6 +6,7 @@ import { Xterm, XtermOptions } from './xterm';
 import '@xterm/xterm/css/xterm.css';
 import { Modal } from '../modal';
 import { KeyBar, Mod } from '../keybar';
+import { MediaTray } from '../media';
 
 interface Props extends XtermOptions {
     id: string;
@@ -89,6 +90,7 @@ export class Terminal extends Component<Props, State> {
                     style="display:none"
                     onChange={this.onFilePicked}
                 />
+                <MediaTray />
             </div>
         );
     }
@@ -343,6 +345,7 @@ export class Terminal extends Component<Props, State> {
     //    window when you tap a window name in the bottom status bar.
     //  - a vertical drag -> SGR wheel notches: scrolls tmux scrollback like a
     //    desktop mouse wheel (finger down = into history, finger up = toward newest).
+    //  - a horizontal swipe -> switch tmux window (left = next, right = prev).
     @bind
     private setupTouch() {
         const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -379,7 +382,15 @@ export class Terminal extends Component<Props, State> {
         const onEnd = (e: TouchEvent) => {
             if (!single || scrolled || e.changedTouches.length !== 1) return;
             const t = e.changedTouches[0];
-            if (Math.abs(t.clientX - sx) + Math.abs(t.clientY - sy) > 10) return; // a drag, not a tap
+            const dx = t.clientX - sx;
+            const dy = t.clientY - sy;
+            // A clearly-horizontal swipe switches tmux windows (left = next, right
+            // = prev) via the ^B prefix — replaces the old ^Bn key.
+            if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+                this.xterm.sendData(dx < 0 ? '\x02n' : '\x02p');
+                return;
+            }
+            if (Math.abs(dx) + Math.abs(dy) > 10) return; // a drag, not a tap
             this.sendClick(t.clientX, t.clientY);
         };
 

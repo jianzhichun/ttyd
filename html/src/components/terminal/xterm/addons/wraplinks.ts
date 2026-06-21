@@ -172,5 +172,74 @@ export function registerWrappedWebLinks(
     return terminal.registerLinkProvider(provider);
 }
 
+// Collect every valid URL in the terminal's visible buffer, wrap-stitched so
+// hard-wrapped URLs are captured WHOLE. Claude Code prints a long URL split by a
+// real '\n' at its wrap column, so the rendered buffer must be stitched back.
+//
+// How CC actually wraps a long URL in a message (observed via capture-pane on a
+// 45-col grid): the message has a left indent (e.g. 2 cols), each wrapped row
+// fills to the grid edge, and the CONTINUATION rows carry the SAME indent:
+//     "  https://media.internal/workspace/assets/dra"   (col 45, full)
+//     "  wer-current.png"                               (indented continuation)
+// So: a row whose content reaches (near) the grid edge has wrapped; join the next
+// row with its leading indent stripped (otherwise that indent lands mid-URL and
+// the regex stops at the space). Soft wraps (terminal autowrap) carry no indent,
+// so the strip is a harmless no-op there. Unlike the clickable-link provider this
+// needs no cell-accurate ranges, so it can stitch more aggressively.
+//
+// Deduped, screen order (top first). ttyd runs scrollback=0 → buffer = viewport.
+export function scanBufferUrls(terminal: Terminal): string[] {
+    const buf = terminal.buffer.active;
+    const cols = terminal.cols;
+    const rows = terminal.rows;
+    const base = buf.baseY;
+    const cell = buf.getNullCell();
+
+    const text: string[] = [];
+    const len: number[] = [];
+    for (let r = 0; r < rows; r++) {
+        const line = buf.getLine(base + r);
+        text.push(line ? line.translateToString(true) : '');
+        len.push(line ? rowContentLen(line, cols, cell) : 0);
+    }
+
+    // A continuation never begins a new URL — so even if a URL's last row happens
+    // to fill the grid exactly, the next row starting with a scheme means it's a
+    // SEPARATE link (don't merge two URLs into one garbage string).
+    const startsUrl = /^(https?|HTTPS?):\/\//;
+    const continues = (r: number): boolean => {
+        const nextText = text[r + 1];
+        if (nextText === undefined) return false; // last visible row
+        if (buf.getLine(base + r + 1)?.isWrapped) return true; // soft wrap (terminal autowrap)
+        if (len[r] < cols) return false; // not a full (wrapped) row — CC fills to the edge
+        return !startsUrl.test(nextText.replace(/^[ \t]+/, '')); // next isn't a new link
+    };
+
+    const rex = new RegExp(URL_REGEX.source, (URL_REGEX.flags || '') + 'g');
+    const seen = new Set<string>();
+    const out: string[] = [];
+    let r = 0;
+    while (r < rows) {
+        let line = text[r];
+        let end = r;
+        let guard = 0;
+        while (continues(end) && guard++ < rows) {
+            end++;
+            line += text[end].replace(/^[ \t]+/, ''); // drop the continuation's indent
+        }
+        rex.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = rex.exec(line))) {
+            const url = match[0];
+            if (isValidUrl(url) && !seen.has(url)) {
+                seen.add(url);
+                out.push(url);
+            }
+        }
+        r = end + 1;
+    }
+    return out;
+}
+
 // Exported for unit testing only (no runtime dependency on the DOM).
-export const __test = { computeLinks, getWindowedLineStrings };
+export const __test = { computeLinks, getWindowedLineStrings, scanBufferUrls };

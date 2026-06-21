@@ -19,11 +19,12 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  // Terminal background, so the small gap the keyboard-aware lift can open
-  // between the terminal's bottom and the pinned key bar reads as terminal,
-  // not a stray strip. (#terminal-root itself is no longer transformed — the
-  // container and key bar are moved independently; see Terminal.setupViewport.)
-  background: #000;
+  // Terminal background (matches termOptions.theme.background), so the small gap
+  // the keyboard-aware lift can open between the terminal's bottom and the pinned
+  // key bar reads as terminal, not a stray strip. (#terminal-root itself is no
+  // longer transformed — the container and key bar move independently; see
+  // Terminal.setupViewport.)
+  background: #2b2b2b;
 }
 
 #terminal-container {
@@ -138,13 +139,9 @@ body {
     border-color: #00a7aa;
   }
 
-  // Explicit placement: 📎 top-right; arrow cross with ↑ directly above ↓.
-  //   row 1:            … ↑ 📎
+  // Explicit placement: arrow cross with ↑ directly above ↓.
+  //   row 1:            … ↑ …
   //   row 2:            … ← ↓ →
-  .ka-clip {
-    grid-column: 7;
-    grid-row: 1;
-  }
   .ka-up {
     grid-column: 6;
     grid-row: 1;
@@ -169,7 +166,6 @@ body {
   #keybar {
     grid-template-columns: repeat(14, 1fr);
   }
-  .ka-clip,
   .ka-up,
   .ka-left,
   .ka-down,
@@ -177,4 +173,181 @@ body {
     grid-column: auto;
     grid-row: auto;
   }
+}
+
+// ── Media tray ──────────────────────────────────────────────────────────────
+// Collects previewable media.internal / notes.internal links printed in the
+// terminal; floating button (top-right) → list → in-place preview. All portaled
+// to <body> (see MediaTray), so it sits above the terminal and the key bar.
+#media-tray {
+  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  color: #d2d2d2;
+}
+
+// Floating count pill, top-right, clear of the centered upload-toast. No icon —
+// just the link count in a cyan-accented monospace pill.
+.mt-btn {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top));
+  right: calc(8px + env(safe-area-inset-right));
+  z-index: 50;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  font-size: 15px;
+  line-height: 32px;
+  text-align: center;
+  background: rgba(28, 28, 28, 0.92);
+  border: 1px solid #00a7aa;
+  border-radius: 17px;
+  color: #37e6e8;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+// Drop-down list under the button.
+.mt-panel {
+  position: fixed;
+  top: calc(50px + env(safe-area-inset-top));
+  right: calc(8px + env(safe-area-inset-right));
+  z-index: 50;
+  width: min(82vw, 340px);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(24, 24, 24, 0.97);
+  border: 1px solid #555;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+.mt-head {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #9a9a9a;
+  border-bottom: 1px solid #3a3a3a;
+}
+.mt-list {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.mt-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #2c2c2c;
+  color: #d2d2d2;
+  text-align: left;
+  cursor: pointer;
+}
+.mt-item:active {
+  background: #333;
+}
+.mt-thumb {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #000;
+}
+.mt-type {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #9a9a9a;
+  background: #3a3a3a;
+}
+.mt-name {
+  flex: 1 1 auto;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Full-screen in-place preview.
+.mt-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  background: rgba(0, 0, 0, 0.9);
+}
+.mt-x,
+.mt-open {
+  position: fixed;
+  top: calc(6px + env(safe-area-inset-top));
+  z-index: 61;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  line-height: 1;
+  color: #fff;
+  background: rgba(40, 40, 40, 0.8);
+  border: 1px solid #666;
+  border-radius: 20px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.mt-x {
+  right: calc(10px + env(safe-area-inset-right));
+  font-size: 26px;
+}
+.mt-open {
+  left: calc(10px + env(safe-area-inset-left));
+  font-size: 20px;
+}
+.mt-stage {
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mt-media {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.mt-media-audio {
+  width: min(86vw, 480px);
+}
+.mt-frame {
+  width: min(96vw, 1100px);
+  height: 88vh;
+  border: none;
+  background: #fff;
+  border-radius: 6px;
+}
+
+// pdf.js multi-page: each page is a canvas, stacked in a scrollable column.
+.mt-pdf {
+  width: min(96vw, 1100px);
+  max-height: 92vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: #525659;
+  border-radius: 6px;
+  padding: 8px 0;
+}
+.mt-pdf-page {
+  display: block;
+  margin: 0 auto 8px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }

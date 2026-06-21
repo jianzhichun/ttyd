@@ -19,28 +19,28 @@ interface Key {
 }
 
 // Uniform 7-per-row grid, equal-width full-size cells, long labels truncated.
-// 10 function keys + a proper arrow cross (↑ above ↓, ← ↓ → on the bottom row)
-// = exactly 2 rows of 7. Each arrow is a full cell (easy to tap). Arrows are
-// placed explicitly (CSS grid-area); the function keys auto-flow into the rest.
-// Prev-window dropped as a dedicated key — still reachable via the sticky ^B
-// then p. (No Spc/⌨: native kbd has space, tapping the terminal summons it.
-// Scrollback scrolling is done by swiping — see Terminal.setupTouch.)
-// Source order = auto-flow fill order. Row 1: Esc Tab ⇧⇥ / @ (then ↑ 📎 placed
-// explicitly); row 2: ^C Ctrl ^B ^Bn (then ← ↓ → placed explicitly).
+// 10 keys + a proper arrow cross (↑ above ↓, ← ↓ → on the bottom row) = exactly
+// 2 rows of 7. Each arrow is a full cell (easy to tap). Arrows are placed
+// explicitly (CSS grid-area); everything else auto-flows into the rest.
+// No window-switch keys — switch windows by swiping horizontally (Terminal.
+// setupTouch); scrollback by swiping vertically.
+// Source order = auto-flow fill order:
+//   Row 1: Esc Tab ⇧⇥ / 📎 (then ↑ placed explicitly) ⏎
+//   Row 2: ^C Ctrl ^B @ (then ← ↓ → placed explicitly)
 const FUNC: Key[] = [
     { label: 'Esc', seq: '\x1b' },
     { label: 'Tab', seq: '\t' },
     { label: '⇧⇥', seq: '\x1b[Z' },
     // / and @ start a slash-command / @-mention you keep typing → summon keyboard
     { label: '/', seq: '/', focus: true },
-    { label: '@', seq: '@', focus: true },
+    { label: '📎', act: 'upload' },
+    { label: '⏎', seq: '\r' },
     { label: '^C', seq: '\x03' },
     { label: 'Ctrl', mod: 'ctrl' },
     { label: '^B', mod: 'prefix' },
-    { label: '^Bn', seq: '\x02n' },
+    { label: '@', seq: '@', focus: true },
 ];
 
-const CLIP: Key = { label: '📎', act: 'upload' }; // top-right corner
 const UP: Key = { label: '↑', seq: '\x1b[A' };
 const LEFT: Key = { label: '←', seq: '\x1b[D' };
 const DOWN: Key = { label: '↓', seq: '\x1b[B' };
@@ -70,7 +70,6 @@ export class KeyBar extends Component<Props> {
         return (
             <div id="keybar">
                 {FUNC.map(k => this.renderKey(k))}
-                {this.renderKey(CLIP, 'ka-clip')}
                 {this.renderKey(LEFT, 'ka-left')}
                 {this.renderKey(UP, 'ka-up')}
                 {this.renderKey(DOWN, 'ka-down')}

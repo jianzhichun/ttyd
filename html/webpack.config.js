@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 const { merge } = require('webpack-merge');
 const ESLintPlugin = require('eslint-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
@@ -29,12 +30,25 @@ const baseConfig = {
                 test: /\.s?[ac]ss$/,
                 use: [devMode ? 'style-loader' : MiniCssExtractPlugin.loader, 'css-loader', 'sass-loader'],
             },
+            {
+                // `import x from '...?raw'` -> file contents as a string (used to
+                // inline the pdf.js worker, since ttyd serves a single html file).
+                resourceQuery: /raw/,
+                type: 'asset/source',
+            },
         ],
     },
     resolve: {
         extensions: ['.tsx', '.ts', '.js'],
+        // pdf.js lists node-canvas as an optional dep for server-side rendering;
+        // the browser build never uses it. Ignore it so webpack doesn't try to
+        // bundle a native module.
+        alias: { canvas: false },
     },
     plugins: [
+        // ttyd serves ONE inlined html, so everything must land in a single JS
+        // file — fold any async chunks (pdf.js) back into the main bundle.
+        new webpack.optimize.LimitChunkCountPlugin({ maxChunks: 1 }),
         new ESLintPlugin({
             context: path.resolve(__dirname, '.'),
             extensions: ['js', 'jsx', 'ts', 'tsx'],
