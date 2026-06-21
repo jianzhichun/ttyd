@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css';
 import { Modal } from '../modal';
 import { KeyBar, Mod } from '../keybar';
 import { MediaTray } from '../media';
+import { NotifyTray } from '../media/notify-tray';
 
 interface Props extends XtermOptions {
     id: string;
@@ -91,6 +92,7 @@ export class Terminal extends Component<Props, State> {
                     onChange={this.onFilePicked}
                 />
                 <MediaTray />
+                <NotifyTray />
             </div>
         );
     }

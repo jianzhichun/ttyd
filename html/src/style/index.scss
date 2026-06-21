@@ -351,3 +351,103 @@ body {
   background: #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
+
+// ── Notification tray ────────────────────────────────────────────────────────
+// Floating feed (top-left, amber) of messages pushed from the host via cc-notify.
+#notify-tray {
+  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  color: #d2d2d2;
+}
+.nt-btn {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top));
+  left: calc(8px + env(safe-area-inset-left));
+  z-index: 50;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 32px;
+  text-align: center;
+  background: rgba(28, 28, 28, 0.92);
+  border: 1px solid #cfae00;
+  border-radius: 17px;
+  color: #fdeb61;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.nt-panel {
+  position: fixed;
+  top: calc(50px + env(safe-area-inset-top));
+  left: calc(8px + env(safe-area-inset-left));
+  z-index: 50;
+  width: min(82vw, 360px);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(24, 24, 24, 0.97);
+  border: 1px solid #555;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+.nt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #9a9a9a;
+  border-bottom: 1px solid #3a3a3a;
+}
+.nt-clear {
+  font-size: 12px;
+  color: #9a9a9a;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.nt-list {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.nt-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #2c2c2c;
+  color: #d2d2d2;
+  text-align: left;
+  cursor: pointer;
+}
+.nt-item:active {
+  background: #333;
+}
+.nt-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.nt-title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nt-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #888;
+}
+.nt-body {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #b0b0b0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
