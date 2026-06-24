@@ -31,6 +31,11 @@ export class Terminal extends Component<Props, State> {
     private disposePaste?: () => void;
     private fileInput?: HTMLInputElement;
     private disarmTimer?: number;
+    // Whether the soft keyboard is currently shown (tracked from visualViewport in
+    // setupViewport). Lets a plain keybar tap tell "keyboard up, I'm typing" apart
+    // from "keyboard dismissed but the helper textarea is still focused" — the iOS
+    // state that makes an Esc/arrow tap re-summon the keyboard.
+    private kbShown = false;
 
     state: State = { modal: false, armed: '', upload: '', uploadPct: 0 };
     private uploadQueue: Blob[] = [];
@@ -264,6 +269,12 @@ export class Terminal extends Component<Props, State> {
         this.xterm.sendData(data);
         if (blur) window.term?.blur();
         else if (focus) window.term?.focus();
+        // Plain key (no explicit blur/focus): keep the keyboard exactly as it is.
+        // iOS leaves the helper textarea focused after the user swipes the keyboard
+        // away, so a tap while it's still focused re-summons it. When the keyboard
+        // is NOT shown, drop that lingering focus so the tap is a pure key-send;
+        // when it IS shown (mid-typing), leave focus so it doesn't flicker away.
+        else if (!this.kbShown) window.term?.blur();
     }
 
     // Tame the iOS soft keyboard for terminal use: kill autocorrect /
@@ -301,6 +312,7 @@ export class Terminal extends Component<Props, State> {
 
         const apply = () => {
             const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+            this.kbShown = kb > 1; // soft keyboard is up iff the visual viewport shrank
             // key bar hugs the top edge of the keyboard
             if (keybar) keybar.style.transform = kb > 1 ? `translateY(${-kb}px)` : '';
             const term = window.term;
