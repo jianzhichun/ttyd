@@ -25,7 +25,7 @@ interface Key {
 // No window-switch keys — switch windows by swiping horizontally (Terminal.
 // setupTouch); scrollback by swiping vertically.
 // Source order = auto-flow fill order:
-//   Row 1: Esc Tab ⇧⇥ / 📎 (then ↑ placed explicitly) ⏎
+//   Row 1: Esc Tab ⇧⇥ / File (then ↑ placed explicitly) ⏎
 //   Row 2: ^C Ctrl ^B @ (then ← ↓ → placed explicitly)
 const FUNC: Key[] = [
     { label: 'Esc', seq: '\x1b' },
@@ -33,7 +33,7 @@ const FUNC: Key[] = [
     { label: '⇧⇥', seq: '\x1b[Z' },
     // / and @ start a slash-command / @-mention you keep typing → summon keyboard
     { label: '/', seq: '/', focus: true },
-    { label: '📎', act: 'upload' },
+    { label: 'File', act: 'upload' },
     { label: '⏎', seq: '\r' },
     { label: '^C', seq: '\x03' },
     { label: 'Ctrl', mod: 'ctrl' },

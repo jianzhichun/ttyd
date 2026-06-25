@@ -451,3 +451,40 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+// Long-press context menu (terminal/index.tsx). Matches the keybar palette:
+// dark cells (#3a3a3a / #555 border), teal (#00a7aa) on press.
+.ctxmenu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+.ctxmenu {
+  position: fixed;
+  min-width: 176px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(28, 28, 28, 0.97);
+  border: 1px solid #555;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+.ctxmenu-item {
+  text-align: left;
+  padding: 11px 14px;
+  font-size: 15px;
+  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  color: #d2d2d2;
+  background: #3a3a3a;
+  border: 1px solid #555;
+  border-radius: 6px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.ctxmenu-item:active {
+  color: #001b1b;
+  background: #00a7aa;
+  border-color: #00a7aa;
+}

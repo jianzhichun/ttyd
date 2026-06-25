@@ -18,6 +18,7 @@ interface State {
     armed: '' | Mod;
     upload: string; // toast text while uploading ('' = hidden)
     uploadPct: number; // 0-100 for the progress bar
+    menu: { x: number; y: number } | null; // long-press context menu (null = hidden)
 }
 
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024; // keep in sync with server MAX_BYTES (2 GB)
@@ -37,7 +38,7 @@ export class Terminal extends Component<Props, State> {
     // state that makes an Esc/arrow tap re-summon the keyboard.
     private kbShown = false;
 
-    state: State = { modal: false, armed: '', upload: '', uploadPct: 0 };
+    state: State = { modal: false, armed: '', upload: '', uploadPct: 0, menu: null };
     private uploadQueue: Blob[] = [];
     private uploading = false;
     private toastTimer?: number;
@@ -67,7 +68,7 @@ export class Terminal extends Component<Props, State> {
         this.xterm.dispose();
     }
 
-    render({ id }: Props, { modal, armed, upload, uploadPct }: State) {
+    render({ id }: Props, { modal, armed, upload, uploadPct, menu }: State) {
         return (
             <div id="terminal-root" ref={c => (this.root = c as HTMLElement)}>
                 {upload &&
@@ -76,6 +77,27 @@ export class Terminal extends Component<Props, State> {
                             <div class="upload-msg">{upload}</div>
                             <div class="upload-track">
                                 <div class="upload-fill" style={`width:${uploadPct}%`} />
+                            </div>
+                        </div>,
+                        document.body
+                    )}
+                {menu &&
+                    createPortal(
+                        <div class="ctxmenu-backdrop" onClick={this.closeMenu}>
+                            <div
+                                class="ctxmenu"
+                                style={`left:${menu.x}px;top:${menu.y}px`}
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <button type="button" class="ctxmenu-item" onClick={this.menuCapture}>
+                                    抓取并复制
+                                </button>
+                                <button type="button" class="ctxmenu-item" onClick={this.menuPaste}>
+                                    粘贴
+                                </button>
+                                <button type="button" class="ctxmenu-item" onClick={this.menuCopyVisible}>
+                                    复制可见屏
+                                </button>
                             </div>
                         </div>,
                         document.body
@@ -371,6 +393,15 @@ export class Terminal extends Component<Props, State> {
         let lastY = 0;
         let single = false;
         let scrolled = false;
+        let lpTimer = 0; // long-press timer (0 = inactive)
+        let longPressed = false; // set once the menu has popped, so onEnd skips the tap
+
+        const cancelLP = () => {
+            if (lpTimer) {
+                clearTimeout(lpTimer);
+                lpTimer = 0;
+            }
+        };
 
         const onStart = (e: TouchEvent) => {
             single = e.touches.length === 1;
@@ -378,10 +409,24 @@ export class Terminal extends Component<Props, State> {
             sy = e.touches[0].clientY;
             lastY = sy;
             scrolled = false;
+            longPressed = false;
+            cancelLP();
+            if (single) {
+                // Hold still ~480ms -> pop the long-press context menu at the finger.
+                lpTimer = window.setTimeout(() => {
+                    lpTimer = 0;
+                    longPressed = true;
+                    (navigator as Navigator & { vibrate?: (n: number) => void }).vibrate?.(8);
+                    this.openMenu(sx, sy);
+                }, 480);
+            }
         };
         const onMove = (e: TouchEvent) => {
             if (!single || e.touches.length !== 1) return;
+            const x = e.touches[0].clientX;
             const y = e.touches[0].clientY;
+            // any real movement cancels the pending long-press (it's a scroll/swipe)
+            if (lpTimer && Math.abs(x - sx) + Math.abs(y - sy) > 10) cancelLP();
             while (y - lastY >= STEP) {
                 this.sendWheel(64); // finger down -> wheel up -> into history
                 lastY += STEP;
@@ -394,6 +439,11 @@ export class Terminal extends Component<Props, State> {
             }
         };
         const onEnd = (e: TouchEvent) => {
+            cancelLP();
+            if (longPressed) {
+                longPressed = false;
+                return; // the menu already popped; don't also tap/click
+            }
             if (!single || scrolled || e.changedTouches.length !== 1) return;
             const t = e.changedTouches[0];
             const dx = t.clientX - sx;
@@ -407,15 +457,78 @@ export class Terminal extends Component<Props, State> {
             if (Math.abs(dx) + Math.abs(dy) > 10) return; // a drag, not a tap
             this.sendClick(t.clientX, t.clientY);
         };
+        // Suppress the browser's own long-press callout/context menu on the canvas.
+        const onCtx = (e: Event) => e.preventDefault();
 
         el.addEventListener('touchstart', onStart, { passive: true });
         el.addEventListener('touchmove', onMove, { passive: true });
         el.addEventListener('touchend', onEnd, { passive: true });
+        el.addEventListener('contextmenu', onCtx);
         this.disposeTap = () => {
+            cancelLP();
             el.removeEventListener('touchstart', onStart);
             el.removeEventListener('touchmove', onMove);
             el.removeEventListener('touchend', onEnd);
+            el.removeEventListener('contextmenu', onCtx);
         };
+    }
+
+    // ---- long-press context menu (copy / paste / capture) ---------------------
+    private openMenu(x: number, y: number) {
+        const W = 192;
+        const H = 156;
+        const cx = Math.min(Math.max(8, x), window.innerWidth - W - 8);
+        const cy = Math.min(Math.max(8, y), window.innerHeight - H - 8);
+        this.setState({ menu: { x: cx, y: cy } });
+    }
+
+    @bind
+    private closeMenu() {
+        if (this.state.menu) this.setState({ menu: null });
+    }
+
+    // Open the same-origin __cccapture page: a selectable plain-text snapshot of
+    // the active pane the phone can long-press-select / copy natively.
+    @bind
+    private menuCapture() {
+        this.closeMenu();
+        window.open(new URL('__cccapture', window.location.href).href, '_blank');
+    }
+
+    // Paste OS clipboard text into the terminal (readText needs a user gesture —
+    // this button tap is one).
+    @bind
+    private async menuPaste() {
+        this.closeMenu();
+        try {
+            const t = await navigator.clipboard.readText();
+            if (t) this.xterm.sendData(t);
+        } catch {
+            /* clipboard read blocked/denied — no-op */
+        }
+    }
+
+    // Copy the visible screen straight to the clipboard (no page hop).
+    @bind
+    private async menuCopyVisible() {
+        this.closeMenu();
+        try {
+            await navigator.clipboard.writeText(this.visibleText());
+        } catch {
+            /* writeText blocked — no-op */
+        }
+    }
+
+    private visibleText(): string {
+        const term = window.term;
+        if (!term) return '';
+        const buf = term.buffer.active;
+        const out: string[] = [];
+        for (let i = 0; i < term.rows; i++) {
+            const line = buf.getLine(buf.viewportY + i);
+            out.push(line ? line.translateToString(true) : '');
+        }
+        return out.join('\n').replace(/\s+$/, '');
     }
 
     private sendWheel(button: number) {
