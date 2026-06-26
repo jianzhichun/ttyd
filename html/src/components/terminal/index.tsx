@@ -19,6 +19,8 @@ interface State {
     upload: string; // toast text while uploading ('' = hidden)
     uploadPct: number; // 0-100 for the progress bar
     menu: { x: number; y: number } | null; // long-press context menu (null = hidden)
+    capture: string | null; // in-app capture overlay text (null = hidden)
+    capCopied: boolean; // "copy all" feedback in the capture overlay
 }
 
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024; // keep in sync with server MAX_BYTES (2 GB)
@@ -38,7 +40,15 @@ export class Terminal extends Component<Props, State> {
     // state that makes an Esc/arrow tap re-summon the keyboard.
     private kbShown = false;
 
-    state: State = { modal: false, armed: '', upload: '', uploadPct: 0, menu: null };
+    state: State = {
+        modal: false,
+        armed: '',
+        upload: '',
+        uploadPct: 0,
+        menu: null,
+        capture: null,
+        capCopied: false,
+    };
     private uploadQueue: Blob[] = [];
     private uploading = false;
     private toastTimer?: number;
@@ -68,7 +78,7 @@ export class Terminal extends Component<Props, State> {
         this.xterm.dispose();
     }
 
-    render({ id }: Props, { modal, armed, upload, uploadPct, menu }: State) {
+    render({ id }: Props, { modal, armed, upload, uploadPct, menu, capture, capCopied }: State) {
         return (
             <div id="terminal-root" ref={c => (this.root = c as HTMLElement)}>
                 {upload &&
@@ -98,6 +108,23 @@ export class Terminal extends Component<Props, State> {
                                 <button type="button" class="ctxmenu-item" onClick={this.menuCopyVisible}>
                                     复制可见屏
                                 </button>
+                            </div>
+                        </div>,
+                        document.body
+                    )}
+                {capture !== null &&
+                    createPortal(
+                        <div class="mt-preview" onClick={this.closeCapture}>
+                            <button class="mt-x" type="button" onClick={this.closeCapture} aria-label="close">
+                                ×
+                            </button>
+                            <div class="capview" onClick={e => e.stopPropagation()}>
+                                <div class="capview-bar">
+                                    <button type="button" class="capview-copy" onClick={this.copyCapture}>
+                                        {capCopied ? '已复制' : '复制全部'}
+                                    </button>
+                                </div>
+                                <pre class="capview-text">{capture}</pre>
                             </div>
                         </div>,
                         document.body
@@ -487,12 +514,35 @@ export class Terminal extends Component<Props, State> {
         if (this.state.menu) this.setState({ menu: null });
     }
 
-    // Open the same-origin __cccapture page: a selectable plain-text snapshot of
-    // the active pane the phone can long-press-select / copy natively.
+    // Fetch the active pane's text from the same-origin __cccapture endpoint and
+    // show it in an in-app overlay (like the media tray preview) — selectable for
+    // native long-press copy, plus a one-tap "copy all".
     @bind
-    private menuCapture() {
+    private async menuCapture() {
         this.closeMenu();
-        window.open(new URL('__cccapture', window.location.href).href, '_blank');
+        this.setState({ capture: '抓取中…', capCopied: false });
+        try {
+            const url = new URL('__cccapture?format=text', window.location.href).href;
+            const r = await fetch(url, { cache: 'no-store' });
+            this.setState({ capture: r.ok ? await r.text() : '抓取失败' });
+        } catch {
+            this.setState({ capture: '抓取失败：端点不可达' });
+        }
+    }
+
+    @bind
+    private closeCapture() {
+        this.setState({ capture: null, capCopied: false });
+    }
+
+    @bind
+    private async copyCapture() {
+        try {
+            await navigator.clipboard.writeText(this.state.capture || '');
+            this.setState({ capCopied: true });
+        } catch {
+            /* writeText blocked — leave the text selectable for manual copy */
+        }
     }
 
     // Paste OS clipboard text into the terminal (readText needs a user gesture —
