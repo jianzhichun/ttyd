@@ -32,6 +32,10 @@ export class Terminal extends Component<Props, State> {
     private disposeViewport?: () => void;
     private disposeTap?: () => void;
     private disposePaste?: () => void;
+    private disposeWheel?: () => void;
+    private swipeHint?: HTMLElement;
+    private swipeArrow?: HTMLElement;
+    private swipeFill?: HTMLElement;
     private fileInput?: HTMLInputElement;
     private disarmTimer?: number;
     // Whether the soft keyboard is currently shown (tracked from visualViewport in
@@ -66,12 +70,14 @@ export class Terminal extends Component<Props, State> {
         this.hardenInput();
         this.setupViewport();
         this.setupTouch();
+        this.setupWheelSwipe();
         this.setupPaste();
     }
 
     componentWillUnmount() {
         this.disposeViewport?.();
         this.disposeTap?.();
+        this.disposeWheel?.();
         this.disposePaste?.();
         if (this.disarmTimer) clearTimeout(this.disarmTimer);
         if (this.toastTimer) clearTimeout(this.toastTimer);
@@ -138,6 +144,12 @@ export class Terminal extends Component<Props, State> {
                     </Modal>
                 </div>
                 <KeyBar armed={armed} onKey={this.sendKey} onMod={this.toggleMod} onUpload={this.triggerUpload} />
+                <div id="swipe-hint" ref={c => (this.swipeHint = c as HTMLElement)}>
+                    <span id="swipe-arrow" ref={c => (this.swipeArrow = c as HTMLElement)} />
+                    <span id="swipe-track">
+                        <i id="swipe-fill" ref={c => (this.swipeFill = c as HTMLElement)} />
+                    </span>
+                </div>
                 <input
                     ref={c => (this.fileInput = c as HTMLInputElement)}
                     type="file"
@@ -415,11 +427,13 @@ export class Terminal extends Component<Props, State> {
         if (!coarse) return;
         const el = this.container;
         const STEP = 24; // px of vertical drag per wheel notch
+        const THRESH_T = 48; // px of horizontal travel for one window switch
         let sx = 0;
         let sy = 0;
         let lastY = 0;
         let single = false;
         let scrolled = false;
+        let swiped = false; // fired a window switch this gesture (one per swipe)
         let lpTimer = 0; // long-press timer (0 = inactive)
         let longPressed = false; // set once the menu has popped, so onEnd skips the tap
 
@@ -436,6 +450,7 @@ export class Terminal extends Component<Props, State> {
             sy = e.touches[0].clientY;
             lastY = sy;
             scrolled = false;
+            swiped = false;
             longPressed = false;
             cancelLP();
             if (single) {
@@ -450,10 +465,24 @@ export class Terminal extends Component<Props, State> {
         };
         const onMove = (e: TouchEvent) => {
             if (!single || e.touches.length !== 1) return;
+            if (longPressed) return; // menu is open — ignore further movement
             const x = e.touches[0].clientX;
             const y = e.touches[0].clientY;
+            const dx = x - sx;
+            const dy = y - sy;
             // any real movement cancels the pending long-press (it's a scroll/swipe)
-            if (lpTimer && Math.abs(x - sx) + Math.abs(y - sy) > 10) cancelLP();
+            if (lpTimer && Math.abs(dx) + Math.abs(dy) > 10) cancelLP();
+            // horizontal-dominant -> window switch, with the charge-up hint
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 12) {
+                scrolled = true; // not a tap
+                this.showSwipe(dx < 0, Math.min(1, Math.abs(dx) / THRESH_T));
+                if (!swiped && Math.abs(dx) >= THRESH_T) {
+                    this.xterm.sendData(dx < 0 ? '\x02n' : '\x02p'); // left -> next, right -> prev
+                    this.fireSwipe();
+                    swiped = true;
+                }
+                return;
+            }
             while (y - lastY >= STEP) {
                 this.sendWheel(64); // finger down -> wheel up -> into history
                 lastY += STEP;
@@ -467,20 +496,19 @@ export class Terminal extends Component<Props, State> {
         };
         const onEnd = (e: TouchEvent) => {
             cancelLP();
+            this.hideSwipe();
             if (longPressed) {
                 longPressed = false;
                 return; // the menu already popped; don't also tap/click
+            }
+            if (swiped) {
+                swiped = false;
+                return; // horizontal swipe already handled during the move
             }
             if (!single || scrolled || e.changedTouches.length !== 1) return;
             const t = e.changedTouches[0];
             const dx = t.clientX - sx;
             const dy = t.clientY - sy;
-            // A clearly-horizontal swipe switches tmux windows (left = next, right
-            // = prev) via the ^B prefix — replaces the old ^Bn key.
-            if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-                this.xterm.sendData(dx < 0 ? '\x02n' : '\x02p');
-                return;
-            }
             if (Math.abs(dx) + Math.abs(dy) > 10) return; // a drag, not a tap
             this.sendClick(t.clientX, t.clientY);
         };
@@ -579,6 +607,73 @@ export class Terminal extends Component<Props, State> {
             out.push(line ? line.translateToString(true) : '');
         }
         return out.join('\n').replace(/\s+$/, '');
+    }
+
+    // Desktop (Mac trackpad) two-finger horizontal swipe -> switch tmux window,
+    // mirroring the mobile horizontal touch swipe. A sideways swipe arrives as
+    // horizontal wheel deltas (deltaX); vertical wheel still falls through to
+    // xterm for scrollback. We preventDefault horizontal so it doesn't trigger
+    // the browser's back/forward history gesture.
+    @bind
+    private setupWheelSwipe() {
+        const el = this.container;
+        const THRESH = 36; // px of horizontal travel for one window switch
+        let accX = 0;
+        let armed = true; // one switch per physical swipe (re-armed after an idle gap)
+        let idle = 0;
+        const onWheel = (e: WheelEvent) => {
+            // treat as horizontal unless it's clearly vertical (so a swipe with a
+            // little vertical jitter still counts, rather than getting dropped)
+            if (Math.abs(e.deltaY) > Math.abs(e.deltaX) * 1.3) return; // vertical -> xterm scrollback
+            e.preventDefault(); // block browser back/forward nav + xterm wheel
+            e.stopPropagation();
+            if (idle) clearTimeout(idle);
+            idle = window.setTimeout(() => {
+                armed = true; // gesture (incl. momentum) settled -> ready for the next
+                accX = 0;
+                this.hideSwipe();
+            }, 90);
+            if (!armed) return;
+            accX += e.deltaX;
+            this.showSwipe(accX > 0, Math.min(1, Math.abs(accX) / THRESH));
+            if (Math.abs(accX) >= THRESH) {
+                this.xterm.sendData(accX > 0 ? '\x02n' : '\x02p'); // left -> next, right -> prev
+                this.fireSwipe();
+                armed = false;
+                accX = 0;
+            }
+        };
+        el.addEventListener('wheel', onWheel, { passive: false, capture: true });
+        this.disposeWheel = () => el.removeEventListener('wheel', onWheel, true);
+    }
+
+    // The floating "charge-up" hint for the swipe gesture — driven imperatively
+    // (no preact re-render per wheel event): it follows the swipe, fills toward
+    // the threshold, then flashes teal on the switch.
+    private showSwipe(next: boolean, p: number) {
+        const h = this.swipeHint;
+        if (!h) return;
+        const tx = ((next ? 1 : -1) * p * 24).toFixed(1); // pill slides toward target side
+        const sc = (0.85 + 0.3 * p).toFixed(3);
+        h.style.opacity = '1';
+        h.style.transform = `translate(-50%, -50%) translateX(${tx}px) scale(${sc})`;
+        h.classList.toggle('charged', p >= 1);
+        if (this.swipeArrow) this.swipeArrow.textContent = next ? '›' : '‹';
+        if (this.swipeFill) this.swipeFill.style.width = `${Math.round(p * 100)}%`;
+    }
+
+    private hideSwipe() {
+        const h = this.swipeHint;
+        if (!h) return;
+        h.style.opacity = '0';
+        h.classList.remove('charged');
+    }
+
+    private fireSwipe() {
+        const h = this.swipeHint;
+        if (!h) return;
+        h.classList.add('fired');
+        window.setTimeout(() => h.classList.remove('fired'), 200);
     }
 
     private sendWheel(button: number) {

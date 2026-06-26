@@ -542,3 +542,57 @@ body {
   color: #e6e6e6;
   font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
 }
+
+// Floating "charge-up" hint for the Mac trackpad swipe -> switch window
+// (terminal/index.tsx, driven imperatively). Hidden until a horizontal swipe.
+#swipe-hint {
+  position: fixed;
+  left: 50%;
+  top: 42%;
+  z-index: 55;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-width: 150px;
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 21px;
+  background: rgba(20, 20, 20, 0.85);
+  border: 1px solid #555;
+  color: #cfcfcf;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.1s ease, background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+#swipe-arrow {
+  flex: 0 0 auto;
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 700;
+}
+#swipe-track {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 2px;
+  background: #3a3a3a;
+  overflow: hidden;
+}
+#swipe-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #00a7aa;
+  border-radius: 2px;
+}
+#swipe-hint.charged {
+  border-color: #00a7aa;
+  color: #37e6e8;
+}
+#swipe-hint.fired {
+  background: rgba(0, 167, 170, 0.5);
+  border-color: #00a7aa;
+  color: #eafffe;
+}
