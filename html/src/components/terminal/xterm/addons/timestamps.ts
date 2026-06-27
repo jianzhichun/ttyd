@@ -77,26 +77,13 @@ export class TimestampAddon implements ITerminalAddon {
             if (!r.ok) return;
             const data = await r.json();
             if (Array.isArray(data?.ts)) {
-                this.mergeTimes(data.ts as (number | undefined)[]);
+                // The server now keys settle-times by content, so these per-row
+                // times are stable across refresh/scroll — display them directly.
+                this.times = data.ts as (number | undefined)[];
                 this.schedule();
             }
         } catch {
             /* transient — keep the previous times */
-        }
-    }
-
-    // Merge server times into our per-row array. A live TUI repaints constantly,
-    // which momentarily resets a row's settle-time to null; replacing outright
-    // would flash the gutter empty. So keep the last known time per row and only
-    // overwrite with a fresh non-null value — UNLESS the row count changed (a
-    // resize: positions no longer line up, so take the new array verbatim).
-    private mergeTimes(next: (number | undefined)[]): void {
-        if (next.length !== this.times.length) {
-            this.times = next.slice();
-            return;
-        }
-        for (let i = 0; i < next.length; i++) {
-            if (typeof next[i] === 'number') this.times[i] = next[i];
         }
     }
 
