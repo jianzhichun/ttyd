@@ -46,6 +46,12 @@ body {
 // Avoid iOS auto-zoom when the hidden input gains focus (triggers when < 16px).
 .xterm-helper-textarea {
   font-size: 16px !important;
+  // xterm sits this box at the cursor, hidden only by opacity:0; a <textarea>'s
+  // default background is white, so when the browser briefly reveals it on an
+  // image paste (Ctrl+V) it flashes a white box. Force it transparent so it can
+  // never show white regardless of what gets pasted into it.
+  background: transparent !important;
+  color: transparent !important;
 }
 
 // Upload toast + progress bar (📎 button / Ctrl+V paste). Floats top-center over
