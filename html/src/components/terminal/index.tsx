@@ -763,7 +763,7 @@ export class Terminal extends Component<Props, State> {
         h.style.opacity = '1';
         h.style.transform = `translate(-50%, -50%) translateX(${tx}px) scale(${sc})`;
         h.classList.toggle('charged', p >= 1);
-        if (this.swipeArrow) this.swipeArrow.textContent = next ? '›' : '‹';
+        if (this.swipeArrow) this.swipeArrow.classList.toggle('to-left', !next);
         if (this.swipeFill) this.swipeFill.style.width = `${Math.round(p * 100)}%`;
     }
 

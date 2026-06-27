@@ -575,9 +575,19 @@ body {
 }
 #swipe-arrow {
   flex: 0 0 auto;
-  font-size: 24px;
-  line-height: 1;
-  font-weight: 700;
+  // Chevron drawn from two borders (not a ‹/› glyph): its geometry is
+  // symmetric top-to-bottom, so align-items:center lands it dead-centre on the
+  // 4px track regardless of font metrics (the glyph's ink sat low). Points
+  // right by default; .to-left flips it. currentColor inherits charged/fired.
+  box-sizing: border-box;
+  width: 11px;
+  height: 11px;
+  border-top: 2.5px solid currentColor;
+  border-right: 2.5px solid currentColor;
+  transform: rotate(45deg);
+}
+#swipe-arrow.to-left {
+  transform: rotate(225deg);
 }
 #swipe-track {
   flex: 1 1 auto;
