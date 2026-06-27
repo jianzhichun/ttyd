@@ -35,21 +35,34 @@ export class TimestampAddon implements ITerminalAddon {
     private times: (number | undefined)[] = []; // pane row -> epoch ms (server time)
     private gutter?: HTMLDivElement;
     private rowEls: HTMLDivElement[] = [];
+    private rowLabels: string[] = []; // last text painted per row → skip no-op DOM writes
     private pollId?: number;
+    private rafId = 0; // coalesces render/scroll bursts to one paint per frame
 
     public activate(terminal: Terminal): void {
         this.terminal = terminal;
         this.injectStyle();
-        this.disposables.push(terminal.onRender(() => this.paint()));
-        this.disposables.push(terminal.onScroll(() => this.paint()));
+        this.disposables.push(terminal.onRender(() => this.schedule()));
+        this.disposables.push(terminal.onScroll(() => this.schedule()));
         this.fetchTimes();
         this.pollId = window.setInterval(() => this.fetchTimes(), POLL_MS);
+    }
+
+    // Coalesce a burst of render/scroll events into a single paint on the next
+    // animation frame — the gutter never needs to repaint more than once a frame.
+    private schedule(): void {
+        if (this.rafId) return;
+        this.rafId = requestAnimationFrame(() => {
+            this.rafId = 0;
+            this.paint();
+        });
     }
 
     public dispose(): void {
         for (const d of this.disposables) d.dispose();
         this.disposables = [];
         if (this.pollId) window.clearInterval(this.pollId);
+        if (this.rafId) cancelAnimationFrame(this.rafId);
         this.gutter?.remove();
         document.getElementById(STYLE_ID)?.remove();
     }
@@ -64,7 +77,7 @@ export class TimestampAddon implements ITerminalAddon {
             const data = await r.json();
             if (Array.isArray(data?.ts)) {
                 this.times = data.ts as (number | undefined)[];
-                this.paint();
+                this.schedule();
             }
         } catch {
             /* transient — keep the previous times */
@@ -124,10 +137,11 @@ export class TimestampAddon implements ITerminalAddon {
             d.appendChild(document.createElement('span'));
             this.gutter!.appendChild(d);
             this.rowEls.push(d);
+            this.rowLabels.push('');
         }
         while (this.rowEls.length > rows) {
-            const extra = this.rowEls.pop();
-            extra?.remove();
+            this.rowEls.pop()?.remove();
+            this.rowLabels.pop();
         }
 
         const buf = term.buffer.active;
@@ -143,22 +157,28 @@ export class TimestampAddon implements ITerminalAddon {
         // blank rows, and collapse a run of rows sharing the same label to one.
         let prev = '';
         for (let i = 0; i < rows; i++) {
-            const span = this.rowEls[i].firstChild as HTMLElement;
+            // What this row should show ('' = nothing). Cheap rejects FIRST — only
+            // build the row text (translateToString) for a row that actually has a
+            // server time and sits in the stamp zone; the input box / timeless rows
+            // never pay for it.
+            let want = '';
             const t = this.times[i];
-            const line = buf.getLine(buf.viewportY + i);
-            const blank = !line || line.translateToString(true).trim() === '';
-            if (i >= liveTop || !t || blank) {
-                span.textContent = '';
-                continue;
+            if (i < liveTop && t) {
+                const line = buf.getLine(buf.viewportY + i);
+                if (line && line.translateToString(true).trim() !== '') {
+                    const label = this.fmt(t);
+                    want = label === prev ? '' : label; // collapse a run of equal times
+                    prev = label;
+                }
             }
-            const label = this.fmt(t);
-            if (label === prev) {
-                span.textContent = '';
-            } else {
-                // time + a dim "UTC" tag so the gutter reads unambiguously as UTC
-                span.innerHTML = `${label}<i class="ts-z">UTC</i>`;
-            }
-            prev = label;
+            // Skip the DOM entirely when this row's content is unchanged — during
+            // scroll/typing most rows are identical frame to frame.
+            if (this.rowLabels[i] === want) continue;
+            this.rowLabels[i] = want;
+            const span = this.rowEls[i].firstChild as HTMLElement;
+            if (want === '') span.textContent = '';
+            // time + a dim "UTC" tag so the gutter reads unambiguously as UTC
+            else span.innerHTML = `${want}<i class="ts-z">UTC</i>`;
         }
     }
 }

@@ -561,6 +561,24 @@ export class Terminal extends Component<Props, State> {
             }
         };
 
+        // Wheel notches are coalesced per animation frame and sent as ONE batched
+        // sequence, so a fast swipe doesn't flood the app with dozens of separate
+        // wheel events — each of which would otherwise force its own redraw → jank.
+        let wheelAccum = 0; // signed notch count pending this frame (+ = into history)
+        let wheelRaf = 0;
+        const flushWheel = () => {
+            wheelRaf = 0;
+            const n = wheelAccum;
+            wheelAccum = 0;
+            if (!n) return;
+            const btn = n > 0 ? 64 : 65; // 64 = wheel up/into history, 65 = toward newest
+            this.xterm.sendData(`\x1b[<${btn};2;2M`.repeat(Math.abs(n)));
+        };
+        const queueWheel = (up: boolean) => {
+            wheelAccum += up ? 1 : -1;
+            if (!wheelRaf) wheelRaf = window.requestAnimationFrame(flushWheel);
+        };
+
         const onStart = (e: TouchEvent) => {
             single = e.touches.length === 1;
             sx = e.touches[0].clientX;
@@ -601,12 +619,12 @@ export class Terminal extends Component<Props, State> {
                 return;
             }
             while (y - lastY >= STEP) {
-                this.sendWheel(64); // finger down -> wheel up -> into history
+                queueWheel(true); // finger down -> wheel up -> into history
                 lastY += STEP;
                 scrolled = true;
             }
             while (lastY - y >= STEP) {
-                this.sendWheel(65); // finger up -> wheel down -> toward newest
+                queueWheel(false); // finger up -> wheel down -> toward newest
                 lastY -= STEP;
                 scrolled = true;
             }
@@ -643,6 +661,7 @@ export class Terminal extends Component<Props, State> {
         el.addEventListener('contextmenu', onCtx);
         this.disposeTap = () => {
             cancelLP();
+            if (wheelRaf) cancelAnimationFrame(wheelRaf);
             el.removeEventListener('touchstart', onStart);
             el.removeEventListener('touchmove', onMove);
             el.removeEventListener('touchend', onEnd);
@@ -797,10 +816,6 @@ export class Terminal extends Component<Props, State> {
         if (!h) return;
         h.classList.add('fired'); // brief white-teal burst on the switch
         window.setTimeout(() => h.classList.remove('fired'), 220);
-    }
-
-    private sendWheel(button: number) {
-        this.xterm.sendData(`\x1b[<${button};2;2M`);
     }
 
     // Brief teal ripple at the tap point — mobile feedback that a tap landed and
