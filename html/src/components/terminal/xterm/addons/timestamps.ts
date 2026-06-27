@@ -105,7 +105,7 @@ export class TimestampAddon implements ITerminalAddon {
                 for (const [k, v] of Object.entries(data.map)) m.set(k, v as number);
                 this.cmap = m;
             }
-            if (data?.gen != null) this.mapGen = String(data.gen);
+            if (typeof data?.gen === 'number') this.mapGen = String(data.gen);
             this.schedule();
         } catch {
             /* transient — keep the previous times */
