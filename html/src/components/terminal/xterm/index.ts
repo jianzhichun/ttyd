@@ -243,6 +243,27 @@ export class Xterm {
         let imeKey = false; // last keydown was an IME keydown (keyCode 229)
         let keyPressed = false; // a keypress fired this key → xterm already sent it
         let composing = false;
+
+        // TEMP on-screen event log (?vvdebug / ?imelog) to characterize how iOS really
+        // delivers Dictation vs CJK-keyboard input on a real device — they can't be
+        // told apart from char type alone, so we capture the raw event sequence.
+        let logEl: HTMLElement | null = null;
+        const logLines: string[] = [];
+        if (location.search.indexOf('vvdebug') >= 0 || location.search.indexOf('imelog') >= 0) {
+            logEl = document.createElement('div');
+            logEl.style.cssText =
+                'position:fixed;left:0;bottom:0;width:100%;max-height:42vh;overflow:hidden;' +
+                'z-index:99999;background:rgba(0,0,0,.85);color:#0f0;' +
+                'font:10px/1.25 monospace;padding:3px;white-space:pre;pointer-events:none';
+            document.body.appendChild(logEl);
+        }
+        const ev = (s: string) => {
+            if (!logEl) return;
+            logLines.unshift(s);
+            if (logLines.length > 16) logLines.pop();
+            logEl.textContent = logLines.join('\n');
+        };
+
         // Page-lifetime listeners on the single, never-rebuilt helper textarea —
         // deliberately NOT this.register(). dispose() runs on every socket close
         // (i.e. every auto-reconnect), but guardIme is only called once from open(),
@@ -255,32 +276,47 @@ export class Xterm {
         reg('keydown', (e: Event) => {
             imeKey = (e as KeyboardEvent).keyCode === 229;
             keyPressed = false;
+            ev(`kd kc=${(e as KeyboardEvent).keyCode} ${JSON.stringify((e as KeyboardEvent).key)}`);
         });
-        reg('keypress', () => (keyPressed = true));
+        reg('keypress', () => {
+            keyPressed = true;
+            ev('kp');
+        });
         reg('compositionstart', () => {
             composing = true;
             imeKey = false;
+            ev('cs');
         });
-        reg('compositionend', () => {
+        reg('compositionupdate', (e: Event) => ev(`cu ${JSON.stringify((e as CompositionEvent).data)}`));
+        reg('compositionend', (e: Event) => {
             composing = false;
             imeKey = false;
+            ev(`ce ${JSON.stringify((e as CompositionEvent).data)}`);
         });
+        // beforeinput logged too — its inputType often disambiguates dictation from a
+        // keystroke before the value mutates. Pure diagnostics, no side effects.
+        reg('beforeinput', (e: Event) =>
+            ev(`bi ${(e as InputEvent).inputType} d=${JSON.stringify((e as InputEvent).data)}`)
+        );
         reg('input', (e: Event) => {
             const ie = e as InputEvent;
             const dropped = imeKey && !keyPressed;
+            ev(
+                `in ${ie.inputType} d=${JSON.stringify(ie.data)} ic=${ie.isComposing} ` +
+                    `cm=${composing} drop=${dropped}`
+            );
             imeKey = false;
             if (composing || ie.isComposing || !dropped) return;
-            // Only recover the SINGLE ASCII char the CJK keyboard genuinely drops
-            // (space / digit / ASCII punctuation). The length-1 + ASCII guard is what
-            // keeps iOS Dictation out: dictation streams multi-char words and CJK text
-            // through insertText (often non-composing), and without this guard guardIme
-            // re-sent every chunk on top of xterm's own onData → duplicated, "very
-            // sensitive" repeated input. Multi-char / non-ASCII is left to xterm.
+            // Recover the single char the CJK keyboard drops (space/digit/punct, incl.
+            // full-width CJK punctuation, which is non-ASCII). length===1 keeps
+            // multi-char dictation words out; single-char dictation behavior is exactly
+            // what the ?imelog capture above is meant to reveal so we can fix it right.
             const d = ie.data;
-            if (ie.inputType === 'insertText' && d && d.length === 1 && d >= ' ' && d <= '~') {
+            if (ie.inputType === 'insertText' && d && d.length === 1) {
                 ta.value = '';
                 if (this.inputHandler) this.inputHandler(d);
                 else this.sendData(d);
+                ev(`  -> SENT ${JSON.stringify(d)}`);
             }
         });
     }
