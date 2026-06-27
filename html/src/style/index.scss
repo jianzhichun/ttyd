@@ -1,9 +1,9 @@
 html,
 body {
-  height: 100%;
-  min-height: 100%;
-  margin: 0;
-  overflow: hidden;
+    height: 100%;
+    min-height: 100%;
+    margin: 0;
+    overflow: hidden;
 }
 
 // Lock the page so the iOS soft keyboard can't auto-scroll the document on
@@ -11,47 +11,47 @@ body {
 // a gap between the key bar and the keyboard. Pinned, only the
 // transform moves content, so the key bar sits flush above the keyboard.
 body {
-  position: fixed;
-  inset: 0;
+    position: fixed;
+    inset: 0;
 }
 
 #terminal-root {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  // Terminal background (matches termOptions.theme.background), so the small gap
-  // the keyboard-aware lift can open between the terminal's bottom and the pinned
-  // key bar reads as terminal, not a stray strip. (#terminal-root itself is no
-  // longer transformed — the container and key bar move independently; see
-  // Terminal.setupViewport.)
-  background: #2b2b2b;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    // Terminal background (matches termOptions.theme.background), so the small gap
+    // the keyboard-aware lift can open between the terminal's bottom and the pinned
+    // key bar reads as terminal, not a stray strip. (#terminal-root itself is no
+    // longer transformed — the container and key bar move independently; see
+    // Terminal.setupViewport.)
+    background: #2b2b2b;
 }
 
 #terminal-container {
-  flex: 1 1 auto;
-  min-height: 0;
-  will-change: transform;
-  // NB: in the #terminal-root flex column, auto left/right margins would
-  // defeat align-items:stretch and shrink-wrap the terminal (PC side gutters).
-  align-self: stretch;
-  width: auto;
-  margin: 0;
-  padding: 0;
-  .terminal {
-    padding: 5px;
-    height: calc(100% - 10px);
-  }
+    flex: 1 1 auto;
+    min-height: 0;
+    will-change: transform;
+    // NB: in the #terminal-root flex column, auto left/right margins would
+    // defeat align-items:stretch and shrink-wrap the terminal (PC side gutters).
+    align-self: stretch;
+    width: auto;
+    margin: 0;
+    padding: 0;
+    .terminal {
+        padding: 5px;
+        height: calc(100% - 10px);
+    }
 }
 
 // Avoid iOS auto-zoom when the hidden input gains focus (triggers when < 16px).
 .xterm-helper-textarea {
-  font-size: 16px !important;
-  // xterm sits this box at the cursor, hidden only by opacity:0; a <textarea>'s
-  // default background is white, so when the browser briefly reveals it on an
-  // image paste (Ctrl+V) it flashes a white box. Force it transparent so it can
-  // never show white regardless of what gets pasted into it.
-  background: transparent !important;
-  color: transparent !important;
+    font-size: 16px !important;
+    // xterm sits this box at the cursor, hidden only by opacity:0; a <textarea>'s
+    // default background is white, so when the browser briefly reveals it on an
+    // image paste (Ctrl+V) it flashes a white box. Force it transparent so it can
+    // never show white regardless of what gets pasted into it.
+    background: transparent !important;
+    color: transparent !important;
 }
 
 // Upload toast + progress bar (📎 button / Ctrl+V paste). Floats top-center over
@@ -59,126 +59,126 @@ body {
 // Portaled to <body> (NOT inside #terminal-root, whose will-change:transform
 // would make it the containing block and stretch this abspos box to full screen).
 #upload-toast {
-  position: fixed;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 40;
-  min-width: 200px;
-  max-width: 80vw;
-  padding: 8px 12px;
-  background: rgba(28, 28, 28, 0.95);
-  border: 1px solid #555;
-  border-radius: 8px;
-  color: #d2d2d2;
-  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
-  font-size: 13px;
-  pointer-events: none;
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    min-width: 200px;
+    max-width: 80vw;
+    padding: 8px 12px;
+    background: rgba(28, 28, 28, 0.95);
+    border: 1px solid #555;
+    border-radius: 8px;
+    color: #d2d2d2;
+    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    font-size: 13px;
+    pointer-events: none;
 
-  .upload-msg {
-    margin-bottom: 6px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .upload-track {
-    height: 4px;
-    background: #3a3a3a;
-    border-radius: 2px;
-    overflow: hidden;
-  }
-  .upload-fill {
-    height: 100%;
-    background: #00a7aa;
-    transition: width 0.15s linear;
-  }
+    .upload-msg {
+        margin-bottom: 6px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .upload-track {
+        height: 4px;
+        background: #3a3a3a;
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    .upload-fill {
+        height: 100%;
+        background: #00a7aa;
+        transition: width 0.15s linear;
+    }
 }
 
 // Mobile virtual key bar — hidden on desktop, shown only for coarse pointers.
 #keybar {
-  display: none;
+    display: none;
 }
 
 @media (pointer: coarse) {
-  // Uniform 7-per-row grid, equal-width cells. Long labels truncate (ellipsis),
-  // never overflow. The ↑/↓ pair shares one cell (↑ above ↓) so 11 function keys
-  // + 4 arrows fit in exactly 2 rows.
-  #keybar {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    grid-auto-rows: 44px;
-    gap: 6px;
-    padding: 6px 8px;
-    padding-bottom: calc(6px + env(safe-area-inset-bottom));
-    background: #1c1c1c;
-    border-top: 1px solid #000;
-    user-select: none;
-    -webkit-user-select: none;
-    will-change: transform; // pinned above the keyboard via transform (setupViewport)
-  }
+    // Uniform 7-per-row grid, equal-width cells. Long labels truncate (ellipsis),
+    // never overflow. The ↑/↓ pair shares one cell (↑ above ↓) so 11 function keys
+    // + 4 arrows fit in exactly 2 rows.
+    #keybar {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        grid-auto-rows: 44px;
+        gap: 6px;
+        padding: 6px 8px;
+        padding-bottom: calc(6px + env(safe-area-inset-bottom));
+        background: #1c1c1c;
+        border-top: 1px solid #000;
+        user-select: none;
+        -webkit-user-select: none;
+        will-change: transform; // pinned above the keyboard via transform (setupViewport)
+    }
 
-  .keybar-key {
-    min-width: 0; // allow the cell to shrink so the label can ellipsis
-    height: 100%;
-    padding: 0 3px;
-    font-size: 14px;
-    font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
-    color: #d2d2d2;
-    background: #3a3a3a;
-    border: 1px solid #555;
-    border-radius: 6px;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-  }
+    .keybar-key {
+        min-width: 0; // allow the cell to shrink so the label can ellipsis
+        height: 100%;
+        padding: 0 3px;
+        font-size: 14px;
+        font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+        color: #d2d2d2;
+        background: #3a3a3a;
+        border: 1px solid #555;
+        border-radius: 6px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+    }
 
-  .keybar-key:active {
-    background: #555;
-  }
+    .keybar-key:active {
+        background: #555;
+    }
 
-  // armed sticky modifier (Ctrl / ^B) — highlighted until the next key
-  .keybar-key.keybar-armed {
-    color: #001b1b;
-    background: #00a7aa;
-    border-color: #00a7aa;
-  }
+    // armed sticky modifier (Ctrl / ^B) — highlighted until the next key
+    .keybar-key.keybar-armed {
+        color: #001b1b;
+        background: #00a7aa;
+        border-color: #00a7aa;
+    }
 
-  // Explicit placement: arrow cross with ↑ directly above ↓.
-  //   row 1:            … ↑ …
-  //   row 2:            … ← ↓ →
-  .ka-up {
-    grid-column: 6;
-    grid-row: 1;
-  }
-  .ka-left {
-    grid-column: 5;
-    grid-row: 2;
-  }
-  .ka-down {
-    grid-column: 6;
-    grid-row: 2;
-  }
-  .ka-right {
-    grid-column: 7;
-    grid-row: 2;
-  }
+    // Explicit placement: arrow cross with ↑ directly above ↓.
+    //   row 1:            … ↑ …
+    //   row 2:            … ← ↓ →
+    .ka-up {
+        grid-column: 6;
+        grid-row: 1;
+    }
+    .ka-left {
+        grid-column: 5;
+        grid-row: 2;
+    }
+    .ka-down {
+        grid-column: 6;
+        grid-row: 2;
+    }
+    .ka-right {
+        grid-column: 7;
+        grid-row: 2;
+    }
 }
 
 // Wide touch screens (landscape phone / unfolded foldable): plenty of width, so
 // drop to a single row of 14 — arrows go flat (← ↑ ↓ →), no stacked cross.
 @media (pointer: coarse) and (min-width: 760px) {
-  #keybar {
-    grid-template-columns: repeat(14, 1fr);
-  }
-  .ka-up,
-  .ka-left,
-  .ka-down,
-  .ka-right {
-    grid-column: auto;
-    grid-row: auto;
-  }
+    #keybar {
+        grid-template-columns: repeat(14, 1fr);
+    }
+    .ka-up,
+    .ka-left,
+    .ka-down,
+    .ka-right {
+        grid-column: auto;
+        grid-row: auto;
+    }
 }
 
 // ── Media tray ──────────────────────────────────────────────────────────────
@@ -186,429 +186,478 @@ body {
 // terminal; floating button (top-right) → list → in-place preview. All portaled
 // to <body> (see MediaTray), so it sits above the terminal and the key bar.
 #media-tray {
-  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
-  color: #d2d2d2;
+    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    color: #d2d2d2;
 }
 
 // Floating count pill, top-right, clear of the centered upload-toast. No icon —
 // just the link count in a cyan-accented monospace pill.
 .mt-btn {
-  position: fixed;
-  top: calc(8px + env(safe-area-inset-top));
-  right: calc(8px + env(safe-area-inset-right));
-  z-index: 50;
-  min-width: 34px;
-  height: 34px;
-  padding: 0 9px;
-  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
-  font-size: 15px;
-  line-height: 32px;
-  text-align: center;
-  background: rgba(28, 28, 28, 0.92);
-  border: 1px solid #00a7aa;
-  border-radius: 17px;
-  color: #37e6e8;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
+    position: fixed;
+    top: calc(8px + env(safe-area-inset-top));
+    right: calc(8px + env(safe-area-inset-right));
+    z-index: 50;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 9px;
+    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    font-size: 15px;
+    line-height: 32px;
+    text-align: center;
+    background: rgba(28, 28, 28, 0.92);
+    border: 1px solid #00a7aa;
+    border-radius: 17px;
+    color: #37e6e8;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
 }
 
 // Drop-down list under the button.
 .mt-panel {
-  position: fixed;
-  top: calc(50px + env(safe-area-inset-top));
-  right: calc(8px + env(safe-area-inset-right));
-  z-index: 50;
-  width: min(82vw, 340px);
-  max-height: 60vh;
-  display: flex;
-  flex-direction: column;
-  background: rgba(24, 24, 24, 0.97);
-  border: 1px solid #555;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+    position: fixed;
+    top: calc(50px + env(safe-area-inset-top));
+    right: calc(8px + env(safe-area-inset-right));
+    z-index: 50;
+    width: min(82vw, 340px);
+    max-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    background: rgba(24, 24, 24, 0.97);
+    border: 1px solid #555;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
 }
 .mt-head {
-  padding: 8px 10px;
-  font-size: 12px;
-  color: #9a9a9a;
-  border-bottom: 1px solid #3a3a3a;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #9a9a9a;
+    border-bottom: 1px solid #3a3a3a;
 }
 .mt-list {
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 .mt-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  background: none;
-  border: none;
-  border-bottom: 1px solid #2c2c2c;
-  color: #d2d2d2;
-  text-align: left;
-  cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid #2c2c2c;
+    color: #d2d2d2;
+    text-align: left;
+    cursor: pointer;
 }
 .mt-item:active {
-  background: #333;
+    background: #333;
 }
 .mt-thumb {
-  flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  border-radius: 6px;
-  object-fit: cover;
-  background: #000;
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: #000;
 }
 .mt-type {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: #9a9a9a;
-  background: #3a3a3a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #9a9a9a;
+    background: #3a3a3a;
 }
 .mt-name {
-  flex: 1 1 auto;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+    flex: 1 1 auto;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 // Full-screen in-place preview.
 .mt-preview {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
-    env(safe-area-inset-left);
-  background: rgba(0, 0, 0, 0.9);
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: rgba(0, 0, 0, 0.9);
 }
 .mt-x,
 .mt-open {
-  position: fixed;
-  top: calc(6px + env(safe-area-inset-top));
-  z-index: 61;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  line-height: 1;
-  color: #fff;
-  background: rgba(40, 40, 40, 0.8);
-  border: 1px solid #666;
-  border-radius: 20px;
-  cursor: pointer;
-  text-decoration: none;
+    position: fixed;
+    top: calc(6px + env(safe-area-inset-top));
+    z-index: 61;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    line-height: 1;
+    color: #fff;
+    background: rgba(40, 40, 40, 0.8);
+    border: 1px solid #666;
+    border-radius: 20px;
+    cursor: pointer;
+    text-decoration: none;
 }
 .mt-x {
-  right: calc(10px + env(safe-area-inset-right));
-  font-size: 26px;
+    right: calc(10px + env(safe-area-inset-right));
+    font-size: 26px;
 }
 .mt-open {
-  left: calc(10px + env(safe-area-inset-left));
-  font-size: 20px;
+    left: calc(10px + env(safe-area-inset-left));
+    font-size: 20px;
 }
 .mt-stage {
-  max-width: 100%;
-  max-height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+    max-width: 100%;
+    max-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 .mt-media {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
 }
 .mt-media-audio {
-  width: min(86vw, 480px);
+    width: min(86vw, 480px);
 }
 .mt-frame {
-  width: min(96vw, 1100px);
-  height: 88vh;
-  border: none;
-  background: #fff;
-  border-radius: 6px;
+    width: min(96vw, 1100px);
+    height: 88vh;
+    border: none;
+    background: #fff;
+    border-radius: 6px;
 }
 
 // pdf.js multi-page: each page is a canvas, stacked in a scrollable column.
 .mt-pdf {
-  width: min(96vw, 1100px);
-  max-height: 92vh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  background: #525659;
-  border-radius: 6px;
-  padding: 8px 0;
+    width: min(96vw, 1100px);
+    max-height: 92vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #525659;
+    border-radius: 6px;
+    padding: 8px 0;
 }
 .mt-pdf-page {
-  display: block;
-  margin: 0 auto 8px;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    display: block;
+    margin: 0 auto 8px;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 // ── Notification tray ────────────────────────────────────────────────────────
 // Floating feed (top-left, amber) of messages pushed from the host via cc-notify.
 #notify-tray {
-  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
-  color: #d2d2d2;
+    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    color: #d2d2d2;
 }
 .nt-btn {
-  position: fixed;
-  top: calc(8px + env(safe-area-inset-top));
-  left: calc(8px + env(safe-area-inset-left));
-  z-index: 50;
-  min-width: 34px;
-  height: 34px;
-  padding: 0 9px;
-  font-family: inherit;
-  font-size: 15px;
-  line-height: 32px;
-  text-align: center;
-  background: rgba(28, 28, 28, 0.92);
-  border: 1px solid #cfae00;
-  border-radius: 17px;
-  color: #fdeb61;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
+    position: fixed;
+    top: calc(8px + env(safe-area-inset-top));
+    left: calc(8px + env(safe-area-inset-left));
+    z-index: 50;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 9px;
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 32px;
+    text-align: center;
+    background: rgba(28, 28, 28, 0.92);
+    border: 1px solid #cfae00;
+    border-radius: 17px;
+    color: #fdeb61;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
 }
 .nt-panel {
-  position: fixed;
-  top: calc(50px + env(safe-area-inset-top));
-  left: calc(8px + env(safe-area-inset-left));
-  z-index: 50;
-  width: min(82vw, 360px);
-  max-height: 60vh;
-  display: flex;
-  flex-direction: column;
-  background: rgba(24, 24, 24, 0.97);
-  border: 1px solid #555;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+    position: fixed;
+    top: calc(50px + env(safe-area-inset-top));
+    left: calc(8px + env(safe-area-inset-left));
+    z-index: 50;
+    width: min(82vw, 360px);
+    max-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    background: rgba(24, 24, 24, 0.97);
+    border: 1px solid #555;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
 }
 .nt-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 10px;
-  font-size: 12px;
-  color: #9a9a9a;
-  border-bottom: 1px solid #3a3a3a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #9a9a9a;
+    border-bottom: 1px solid #3a3a3a;
 }
 .nt-clear {
-  font-size: 12px;
-  color: #9a9a9a;
-  background: none;
-  border: none;
-  cursor: pointer;
+    font-size: 12px;
+    color: #9a9a9a;
+    background: none;
+    border: none;
+    cursor: pointer;
 }
 .nt-list {
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 .nt-item {
-  display: block;
-  width: 100%;
-  padding: 8px 10px;
-  background: none;
-  border: none;
-  border-bottom: 1px solid #2c2c2c;
-  color: #d2d2d2;
-  text-align: left;
-  cursor: pointer;
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid #2c2c2c;
+    color: #d2d2d2;
+    text-align: left;
+    cursor: pointer;
 }
 .nt-item:active {
-  background: #333;
+    background: #333;
 }
 .nt-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
 }
 .nt-title {
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .nt-time {
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: #888;
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: #888;
 }
 .nt-body {
-  margin-top: 2px;
-  font-size: 12px;
-  color: #b0b0b0;
-  white-space: pre-wrap;
-  word-break: break-word;
+    margin-top: 2px;
+    font-size: 12px;
+    color: #b0b0b0;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 // Long-press context menu (terminal/index.tsx). Matches the keybar palette:
 // dark cells (#3a3a3a / #555 border), teal (#00a7aa) on press.
 .ctxmenu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
 }
 .ctxmenu {
-  position: fixed;
-  min-width: 176px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  background: rgba(28, 28, 28, 0.97);
-  border: 1px solid #555;
-  border-radius: 10px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+    position: fixed;
+    min-width: 176px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    background: rgba(28, 28, 28, 0.97);
+    border: 1px solid #555;
+    border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
 }
 .ctxmenu-item {
-  text-align: left;
-  padding: 11px 14px;
-  font-size: 15px;
-  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
-  color: #d2d2d2;
-  background: #3a3a3a;
-  border: 1px solid #555;
-  border-radius: 6px;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+    text-align: left;
+    padding: 11px 14px;
+    font-size: 15px;
+    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    color: #d2d2d2;
+    background: #3a3a3a;
+    border: 1px solid #555;
+    border-radius: 6px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 .ctxmenu-item:active {
-  color: #001b1b;
-  background: #00a7aa;
-  border-color: #00a7aa;
+    color: #001b1b;
+    background: #00a7aa;
+    border-color: #00a7aa;
 }
 
 // In-app capture overlay (terminal/index.tsx). Reuses .mt-preview backdrop +
 // .mt-x close button (media tray) for consistency; .capview is the text card.
 .capview {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 900px;
-  max-height: 100%;
-  min-height: 0;
-  background: rgba(24, 24, 24, 0.98);
-  border: 1px solid #555;
-  border-radius: 10px;
-  overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 900px;
+    max-height: 100%;
+    min-height: 0;
+    background: rgba(24, 24, 24, 0.98);
+    border: 1px solid #555;
+    border-radius: 10px;
+    overflow: hidden;
 }
 .capview-bar {
-  flex: 0 0 auto;
-  display: flex;
-  padding: 8px;
-  border-bottom: 1px solid #3a3a3a;
+    flex: 0 0 auto;
+    display: flex;
+    padding: 8px;
+    border-bottom: 1px solid #3a3a3a;
 }
 .capview-copy {
-  padding: 9px 16px;
-  font-size: 14px;
-  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
-  color: #d2d2d2;
-  background: #3a3a3a;
-  border: 1px solid #555;
-  border-radius: 6px;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+    padding: 9px 16px;
+    font-size: 14px;
+    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    color: #d2d2d2;
+    background: #3a3a3a;
+    border: 1px solid #555;
+    border-radius: 6px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 .capview-copy:active {
-  color: #001b1b;
-  background: #00a7aa;
-  border-color: #00a7aa;
+    color: #001b1b;
+    background: #00a7aa;
+    border-color: #00a7aa;
 }
 .capview-text {
-  flex: 1 1 auto;
-  min-height: 0; // let overflow:auto actually scroll inside the flex column
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch; // momentum scroll on iOS
-  overscroll-behavior: contain; // don't chain the scroll to the page
-  white-space: pre-wrap;
-  word-break: break-word;
-  -webkit-user-select: text;
-  user-select: text;
-  font-size: 13px;
-  line-height: 1.4;
-  color: #e6e6e6;
-  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    flex: 1 1 auto;
+    min-height: 0; // let overflow:auto actually scroll inside the flex column
+    margin: 0;
+    padding: 12px;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch; // momentum scroll on iOS
+    overscroll-behavior: contain; // don't chain the scroll to the page
+    white-space: pre-wrap;
+    word-break: break-word;
+    -webkit-user-select: text;
+    user-select: text;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #e6e6e6;
+    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
 }
 
-// Floating "charge-up" hint for the Mac trackpad swipe -> switch window
-// (terminal/index.tsx, driven imperatively). Hidden until a horizontal swipe.
+// Slide-to-verify ("拖拽验证码") style charge-up hint for the swipe -> switch-window
+// gesture (terminal/index.tsx, driven imperatively). The pill IS the captcha
+// track: a handle bearing the » arrow rides along it as the swipe charges, a teal
+// fill builds in behind it, it goes teal + glows at the threshold, then flashes
+// white-teal on release. Hidden until a horizontal swipe.
 #swipe-hint {
-  position: fixed;
-  left: 50%;
-  top: 42%;
-  z-index: 55;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
-  min-width: 150px;
-  height: 42px;
-  padding: 0 18px;
-  border-radius: 21px;
-  background: rgba(20, 20, 20, 0.85);
-  border: 1px solid #555;
-  color: #cfcfcf;
-  opacity: 0;
-  transform: translate(-50%, -50%);
-  transition: opacity 0.1s ease, background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-  pointer-events: none;
-  will-change: transform, opacity;
+    position: fixed;
+    left: 50%;
+    top: 42%;
+    z-index: 55;
+    box-sizing: border-box;
+    width: 240px;
+    height: 40px;
+    border-radius: 20px;
+    background: rgba(20, 20, 20, 0.92);
+    border: 1px solid #555;
+    opacity: 0;
+    overflow: hidden;
+    transform: translate(-50%, -50%);
+    transition:
+        opacity 0.1s ease,
+        border-color 0.12s ease,
+        background 0.12s ease;
+    pointer-events: none;
+    will-change: opacity;
 }
-#swipe-arrow {
-  flex: 0 0 auto;
-  // Chevron drawn from two borders (not a ‹/› glyph): its geometry is
-  // symmetric top-to-bottom, so align-items:center lands it dead-centre on the
-  // 4px track regardless of font metrics (the glyph's ink sat low). Points
-  // right by default; .to-left flips it. currentColor inherits charged/fired.
-  box-sizing: border-box;
-  width: 11px;
-  height: 11px;
-  border-top: 2.5px solid currentColor;
-  border-right: 2.5px solid currentColor;
-  transform: rotate(45deg);
+// faint resting label, sitting behind the rail (fill covers it as it charges)
+#swipe-ghost {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font:
+        11px/1 ui-monospace,
+        Menlo,
+        Consolas,
+        monospace;
+    letter-spacing: 2px;
+    color: #5c5c5c;
 }
-#swipe-arrow.to-left {
-  transform: rotate(225deg);
+// holds the moving parts; mirrored as a whole for a left (previous-window) swipe
+#swipe-rail {
+    position: absolute;
+    inset: 0;
 }
-#swipe-track {
-  flex: 1 1 auto;
-  height: 4px;
-  border-radius: 2px;
-  background: #3a3a3a;
-  overflow: hidden;
+#swipe-hint.to-left #swipe-rail {
+    transform: scaleX(-1);
 }
 #swipe-fill {
-  display: block;
-  width: 0;
-  height: 100%;
-  background: #00a7aa;
-  border-radius: 2px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-radius: 20px 0 0 20px;
+    background: linear-gradient(90deg, rgba(0, 167, 170, 0.16), rgba(0, 167, 170, 0.42));
 }
-#swipe-hint.charged {
-  border-color: #00a7aa;
-  color: #37e6e8;
+#swipe-handle {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    width: 36px;
+    border-radius: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #2c2c2c;
+    border: 1px solid #5e5e5e;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    transition:
+        background 0.12s ease,
+        border-color 0.12s ease,
+        box-shadow 0.12s ease;
 }
+#swipe-handle svg {
+    display: block;
+}
+#swipe-handle .ar {
+    stroke: #9a9a9a;
+    transition: stroke 0.12s ease;
+}
+// charged: reached the switch threshold — go teal, light the handle up
+#swipe-hint.done {
+    border-color: #37e6e8;
+}
+#swipe-hint.done #swipe-fill {
+    background: linear-gradient(90deg, rgba(0, 167, 170, 0.45), rgba(55, 230, 232, 0.6));
+}
+#swipe-hint.done #swipe-handle {
+    background: #0c5d5e;
+    border-color: #37e6e8;
+    box-shadow: 0 0 10px rgba(55, 230, 232, 0.7);
+}
+#swipe-hint.done #swipe-handle .ar {
+    stroke: #9ffcfd;
+}
+// fired: the switch fired — brief white-teal burst
 #swipe-hint.fired {
-  background: rgba(0, 167, 170, 0.5);
-  border-color: #00a7aa;
-  color: #eafffe;
+    border-color: #bffdff;
+}
+#swipe-hint.fired #swipe-fill {
+    background: rgba(191, 253, 255, 0.7);
+}
+#swipe-hint.fired #swipe-handle {
+    background: #9ffcfd;
+    border-color: #eaffff;
+    box-shadow: 0 0 14px rgba(191, 253, 255, 0.95);
+}
+#swipe-hint.fired #swipe-handle .ar {
+    stroke: #0b3d3e;
 }

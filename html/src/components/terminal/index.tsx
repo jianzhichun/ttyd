@@ -55,8 +55,8 @@ export class Terminal extends Component<Props, State> {
     private disposeWheel?: () => void;
     private disposeKeyRepeat?: () => void;
     private swipeHint?: HTMLElement;
-    private swipeArrow?: HTMLElement;
     private swipeFill?: HTMLElement;
+    private swipeHandle?: HTMLElement;
     private fileInput?: HTMLInputElement;
     private disarmTimer?: number;
     // Whether the soft keyboard is currently shown (tracked from visualViewport in
@@ -185,9 +185,21 @@ export class Terminal extends Component<Props, State> {
                     onUpload={this.triggerUpload}
                 />
                 <div key="swipe-hint" id="swipe-hint" ref={c => (this.swipeHint = c as HTMLElement)}>
-                    <span id="swipe-arrow" ref={c => (this.swipeArrow = c as HTMLElement)} />
-                    <span id="swipe-track">
+                    <span id="swipe-ghost">◂ 切窗 ▸</span>
+                    <span id="swipe-rail">
                         <i id="swipe-fill" ref={c => (this.swipeFill = c as HTMLElement)} />
+                        <span id="swipe-handle" ref={c => (this.swipeHandle = c as HTMLElement)}>
+                            <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
+                                <path
+                                    class="ar"
+                                    d="M3 3 L7 7 L3 11 M8 3 L12 7 L8 11"
+                                    fill="none"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </span>
                     </span>
                 </div>
                 <input
@@ -758,27 +770,28 @@ export class Terminal extends Component<Props, State> {
     private showSwipe(next: boolean, p: number) {
         const h = this.swipeHint;
         if (!h) return;
-        const tx = ((next ? 1 : -1) * p * 24).toFixed(1); // pill slides toward target side
-        const sc = (0.85 + 0.3 * p).toFixed(3);
         h.style.opacity = '1';
-        h.style.transform = `translate(-50%, -50%) translateX(${tx}px) scale(${sc})`;
-        h.classList.toggle('charged', p >= 1);
-        if (this.swipeArrow) this.swipeArrow.classList.toggle('to-left', !next);
-        if (this.swipeFill) this.swipeFill.style.width = `${Math.round(p * 100)}%`;
+        h.classList.toggle('to-left', !next); // mirror the rail for a previous-window swipe
+        h.classList.toggle('done', p >= 1); // reached threshold → teal, glowing, ready
+        // The handle rides the track and the fill builds in behind it. Geometry is
+        // always computed left-to-right; the .to-left class scaleX(-1)s the rail.
+        // 42px = handle width (36) + 3px inset each side; 39px = handle left + width.
+        if (this.swipeHandle) this.swipeHandle.style.left = `calc(${p} * (100% - 42px) + 3px)`;
+        if (this.swipeFill) this.swipeFill.style.width = `calc(${p} * (100% - 42px) + 39px)`;
     }
 
     private hideSwipe() {
         const h = this.swipeHint;
         if (!h) return;
         h.style.opacity = '0';
-        h.classList.remove('charged');
+        h.classList.remove('done');
     }
 
     private fireSwipe() {
         const h = this.swipeHint;
         if (!h) return;
-        h.classList.add('fired');
-        window.setTimeout(() => h.classList.remove('fired'), 200);
+        h.classList.add('fired'); // brief white-teal burst on the switch
+        window.setTimeout(() => h.classList.remove('fired'), 220);
     }
 
     private sendWheel(button: number) {
