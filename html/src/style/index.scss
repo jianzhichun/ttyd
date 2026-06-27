@@ -43,6 +43,14 @@ body {
     }
 }
 
+// scrollback=0 → xterm never uses its own scrollback (history lives in tmux), yet
+// xterm.css forces .xterm-viewport to overflow-y:scroll, reserving a ~15px
+// scrollbar gutter on the right that the character grid can't fill → a blank strip
+// down the right edge. Nothing ever scrolls here, so hiding it is safe.
+.xterm .xterm-viewport {
+    overflow-y: hidden;
+}
+
 // Avoid iOS auto-zoom when the hidden input gains focus (triggers when < 16px).
 .xterm-helper-textarea {
     font-size: 16px !important;

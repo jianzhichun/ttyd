@@ -489,8 +489,13 @@ export class Terminal extends Component<Props, State> {
         const keybar = this.root.querySelector('#keybar') as HTMLElement | null;
         // ?vvdebug=1 → tiny overlay of the raw viewport numbers (to diagnose
         // device-specific keyboard geometry). Inert for everyone else.
+        // ?vvdebug=1, or auto in standalone (home-screen App) mode where there's no
+        // address bar to add the param. (Temporary — for diagnosing keyboard geometry.)
+        const dbgOn =
+            location.search.indexOf('vvdebug') >= 0 ||
+            (navigator as Navigator & { standalone?: boolean }).standalone === true;
         let dbgEl: HTMLElement | null = null;
-        if (location.search.indexOf('vvdebug') >= 0) {
+        if (dbgOn) {
             dbgEl = document.createElement('div');
             dbgEl.style.cssText =
                 'position:fixed;top:0;left:0;z-index:99999;background:rgba(0,0,0,.85);color:#3f6;font:10px monospace;padding:3px 5px;white-space:pre;pointer-events:none';
@@ -528,6 +533,7 @@ export class Terminal extends Component<Props, State> {
                 const r = keybar?.getBoundingClientRect();
                 dbgEl.textContent =
                     `ih=${window.innerHeight} vvh=${Math.round(vv.height)} ` +
+                    `iw=${window.innerWidth} vvw=${Math.round(vv.width)}\n` +
                     `vvoT=${Math.round(vv.offsetTop)} sY=${Math.round(window.scrollY)} ` +
                     `kb=${Math.round(kb)} kbT=${curKbT}\n` +
                     `kbBot=${r ? Math.round(r.bottom) : '-'} kbH=${keybar?.offsetHeight ?? '-'} ` +
