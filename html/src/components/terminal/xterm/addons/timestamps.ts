@@ -36,7 +36,10 @@ const CSS = `
 export class TimestampAddon implements ITerminalAddon {
     private terminal?: Terminal;
     private disposables: IDisposable[] = [];
-    private times: (number | undefined)[] = []; // pane row -> epoch ms (server time)
+    private times: (number | undefined)[] = []; // live-pane row -> epoch ms (used at bottom)
+    private cmap = new Map<string, number>(); // line content -> settle ms (used while scrolled)
+    private mapGen = ''; // generation of the cached cmap (server bumps on change)
+    private mapWin = ''; // window the cmap belongs to (clear on window switch)
     private gutter?: HTMLDivElement;
     private rowEls: HTMLDivElement[] = [];
     private rowLabels: string[] = []; // last text painted per row → skip no-op DOM writes
@@ -72,20 +75,38 @@ export class TimestampAddon implements ITerminalAddon {
         document.getElementById(STYLE_ID)?.remove();
     }
 
-    // Pull the authoritative per-row change-times from the same-origin sidecar.
-    // On any failure keep the last-known times rather than blanking the gutter.
+    // Pull the authoritative times from the same-origin sidecar. `ts` is the
+    // live-pane per-row table (correct at the bottom). While scrolled into
+    // history that table no longer matches the screen, so we also pull a
+    // content->ms map and look rows up by their text — only fetched when scrolled,
+    // and only re-sent when its generation changes (the gen round-trips here).
+    // On any failure keep the last-known data rather than blanking the gutter.
     private async fetchTimes(): Promise<void> {
         try {
-            const url = new URL('__cctimes', window.location.href).href;
-            const r = await fetch(url, { cache: 'no-store' });
+            const buf = this.terminal?.buffer.active;
+            const scrolled = buf ? buf.viewportY < buf.baseY : false;
+            const u = new URL('__cctimes', window.location.href);
+            if (scrolled) {
+                u.searchParams.set('map', '1');
+                u.searchParams.set('gen', this.mapGen);
+            }
+            const r = await fetch(u.href, { cache: 'no-store' });
             if (!r.ok) return;
             const data = await r.json();
-            if (Array.isArray(data?.ts)) {
-                // The server now keys settle-times by content, so these per-row
-                // times are stable across refresh/scroll — display them directly.
-                this.times = data.ts as (number | undefined)[];
-                this.schedule();
+            if (Array.isArray(data?.ts)) this.times = data.ts as (number | undefined)[];
+            const win = typeof data?.win === 'string' ? data.win : '';
+            if (win !== this.mapWin) {
+                this.mapWin = win; // active window switched → old map is stale
+                this.cmap.clear();
+                this.mapGen = '';
             }
+            if (data?.map && typeof data.map === 'object') {
+                const m = new Map<string, number>();
+                for (const [k, v] of Object.entries(data.map)) m.set(k, v as number);
+                this.cmap = m;
+            }
+            if (data?.gen != null) this.mapGen = String(data.gen);
+            this.schedule();
         } catch {
             /* transient — keep the previous times */
         }
@@ -160,18 +181,20 @@ export class TimestampAddon implements ITerminalAddon {
         const cursorVRow = buf.baseY + buf.cursorY - buf.viewportY;
         const liveTop = cursorVRow > 0 && cursorVRow <= rows ? cursorVRow - 1 : rows;
 
-        // Pass 1: each row's settle-ms (0 = no stamp). The cheap rejects (input-box
-        // zone / no server time) gate the costly translateToString so timeless rows
-        // never pay for it; the blank check drops stamps on rows the browser
-        // currently renders empty (transient client/server skew).
+        // Pass 1: each row's settle-ms (0 = no stamp). At the live bottom the
+        // position-indexed `times` lines up with the screen, so use it directly
+        // (gated by a cheap blank/zone reject before the costly translateToString).
+        // While scrolled into history the positions no longer match, so look each
+        // row up by its rendered text in the content map instead.
+        const scrolled = buf.viewportY < buf.baseY;
         const ms = this.msScratch;
         ms.length = rows;
         for (let i = 0; i < rows; i++) {
             let v = 0;
-            const t = this.times[i];
-            if (i < liveTop && t) {
+            if (i < liveTop && (scrolled || this.times[i])) {
                 const line = buf.getLine(buf.viewportY + i);
-                if (line && line.translateToString(true).trim() !== '') v = t;
+                const text = line ? line.translateToString(true) : '';
+                if (text.trim() !== '') v = scrolled ? this.cmap.get(text) || 0 : this.times[i] || 0;
             }
             ms[i] = v;
         }
