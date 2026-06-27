@@ -102,6 +102,8 @@ export class Xterm {
     private reconnect = true;
     private doReconnect = true;
     private closeOnDisconnect = false;
+    private reconnecting = false; // a visibility/online-triggered reconnect is in flight
+    private reconnectKey?: IDisposable; // pending "Press ⏎ to Reconnect" key listener
 
     // pointer: coarse (touch) — computed once and reused; gates the mobile-only
     // paths (IME direct-input recovery, selection-clear) instead of re-running
@@ -180,6 +182,14 @@ export class Xterm {
         this.guardIme(parent);
         this.register(registerWrappedWebLinks(terminal));
         fitAddon.fit();
+
+        // Auto-reconnect when the tab is foregrounded again or the network returns —
+        // mobile suspends a backgrounded tab and drops the socket, and we don't want
+        // the user to have to hit Enter. Page-lifetime listeners (survive the
+        // per-socket dispose()), so they're added here, not via register().
+        document.addEventListener('visibilitychange', this.reconnectNow);
+        window.addEventListener('pageshow', this.reconnectNow);
+        window.addEventListener('online', this.reconnectNow);
     }
 
     // iOS IME direct-input fix. On the iOS Chinese keyboard a literal space, digit
@@ -322,6 +332,24 @@ export class Xterm {
         }
     }
 
+    // Mobile browsers suspend a backgrounded tab and drop its WebSocket; on return
+    // ttyd would otherwise sit on "Press ⏎ to Reconnect" until you hit Enter. Wire
+    // this to visibilitychange / pageshow / online so coming back (or the network
+    // returning) silently reconnects. No-ops while hidden, while a reconnect is
+    // already in flight, or when the socket is still live.
+    @bind
+    private reconnectNow() {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        if (this.reconnecting) return;
+        const s = this.socket;
+        if (s && (s.readyState === WebSocket.OPEN || s.readyState === WebSocket.CONNECTING)) return;
+        this.reconnecting = true;
+        this.reconnectKey?.dispose();
+        this.reconnectKey = undefined;
+        this.overlayAddon.showOverlay('Reconnecting…');
+        this.refreshToken().then(this.connect);
+    }
+
     @bind
     public connect() {
         this.socket = new WebSocket(this.options.wsUrl, ['tty']);
@@ -351,6 +379,9 @@ export class Xterm {
         }
 
         this.doReconnect = this.reconnect;
+        this.reconnecting = false;
+        this.reconnectKey?.dispose();
+        this.reconnectKey = undefined;
         this.initListeners();
         // On touch devices don't auto-summon the soft keyboard on connect — let
         // the user tap the terminal (or the ⌨ toggle) when they want to type.
@@ -360,11 +391,16 @@ export class Xterm {
 
     @bind
     private onSocketClose(event: CloseEvent) {
+        // Ignore a late close from a socket we've already replaced (e.g. reconnectNow
+        // fired from visibilitychange before this old socket's queued close ran) —
+        // otherwise dispose() would tear down the fresh connection's listeners.
+        if (event.target && event.target !== this.socket) return;
         console.log(`[ttyd] websocket connection closed with code: ${event.code}`);
 
         const { refreshToken, connect, doReconnect, overlayAddon } = this;
         overlayAddon.showOverlay('Connection Closed');
         this.dispose();
+        this.reconnecting = false;
 
         // 1000: CLOSE_NORMAL
         if (event.code !== 1000 && doReconnect) {
@@ -373,14 +409,14 @@ export class Xterm {
         } else if (this.closeOnDisconnect) {
             window.close();
         } else {
+            // Manual fallback for a close we won't auto-retry (avoids hammering a
+            // genuinely-down server). The common mobile case — backgrounded tab —
+            // is handled on return by reconnectNow via visibilitychange/online, not
+            // here, so it never loops. Enter still forces it.
             const { terminal } = this;
-            const keyDispose = terminal.onKey(e => {
-                const event = e.domEvent;
-                if (event.key === 'Enter') {
-                    keyDispose.dispose();
-                    overlayAddon.showOverlay('Reconnecting...');
-                    refreshToken().then(connect);
-                }
+            this.reconnectKey?.dispose();
+            this.reconnectKey = terminal.onKey(e => {
+                if (e.domEvent.key === 'Enter') this.reconnectNow();
             });
             overlayAddon.showOverlay('Press ⏎ to Reconnect');
         }
