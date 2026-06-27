@@ -13,9 +13,9 @@
 // reflect when output ACTUALLY happened, survive reconnect/refresh, and capture
 // activity that occurred while you weren't looking.
 //
-// Stamps are formatted client-side in the browser-local timezone, widened only as
-// needed: HH:MM:SS today, MM-DD HH:MM:SS an earlier day, +year an earlier year.
-// Always on.
+// Stamps are formatted client-side in UTC (homevm runs in UTC, so the gutter
+// agrees with the server clock, logs, cron and chat), widened only as needed:
+// HH:MM:SS today, MM-DD HH:MM:SS an earlier day, +year an earlier year. Always on.
 import { IDisposable, ITerminalAddon, Terminal } from '@xterm/xterm';
 
 const STYLE_ID = 'ts-gutter-style';
@@ -79,20 +79,25 @@ export class TimestampAddon implements ITerminalAddon {
     }
 
     private fmt(ms: number): string {
-        // Browser-local (the local Date getters), widened to show only the parts
-        // that differ from "now", so the gutter stays as narrow as possible:
-        //   today        → HH:MM:SS
+        // UTC (the getUTC* getters) — homevm runs in UTC, so this keeps the gutter
+        // consistent with the server clock, logs, cron and everything stated in
+        // chat. Widened to show only the parts that differ from "now":
+        //   today (UTC)  → HH:MM:SS
         //   earlier day  → MM-DD HH:MM:SS
         //   earlier year → YYYY-MM-DD HH:MM:SS
         const d = new Date(ms);
         const now = new Date();
         const p = (n: number) => String(n).padStart(2, '0');
-        const time = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-        if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+        const time = `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+        if (
+            d.getUTCFullYear() === now.getUTCFullYear() &&
+            d.getUTCMonth() === now.getUTCMonth() &&
+            d.getUTCDate() === now.getUTCDate()
+        ) {
             return time;
         }
-        const md = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${time}`;
-        return d.getFullYear() === now.getFullYear() ? md : `${d.getFullYear()}-${md}`;
+        const md = `${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${time}`;
+        return d.getUTCFullYear() === now.getUTCFullYear() ? md : `${d.getUTCFullYear()}-${md}`;
     }
 
     // The gutter DOM needs terminal.element, which only exists after open(); build
