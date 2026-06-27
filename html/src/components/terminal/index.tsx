@@ -53,6 +53,7 @@ export class Terminal extends Component<Props, State> {
     private disposeTap?: () => void;
     private disposePaste?: () => void;
     private disposeWheel?: () => void;
+    private disposeKeyRepeat?: () => void;
     private swipeHint?: HTMLElement;
     private swipeArrow?: HTMLElement;
     private swipeFill?: HTMLElement;
@@ -89,6 +90,7 @@ export class Terminal extends Component<Props, State> {
         this.xterm.inputHandler = this.handleInput; // route typed input through modifier logic
         this.xterm.connect();
         this.hardenInput();
+        this.setupKeyRepeat();
         this.setupViewport();
         this.setupTouch();
         this.setupWheelSwipe();
@@ -100,6 +102,7 @@ export class Terminal extends Component<Props, State> {
         this.disposeTap?.();
         this.disposeWheel?.();
         this.disposePaste?.();
+        this.disposeKeyRepeat?.();
         if (this.disarmTimer) clearTimeout(this.disarmTimer);
         if (this.toastTimer) clearTimeout(this.toastTimer);
         this.xterm.dispose();
@@ -385,6 +388,70 @@ export class Terminal extends Component<Props, State> {
         ta.setAttribute('autocapitalize', 'none');
         ta.setAttribute('autocomplete', 'off');
         ta.setAttribute('spellcheck', 'false');
+    }
+
+    // Soft-keyboard backspace auto-repeat. A mobile keyboard fires ONE Backspace
+    // keydown and then nothing while the key is held: xterm keeps its helper
+    // textarea empty, so the OS has no character to repeat-delete and stops after
+    // one. We synthesize the repeat — xterm still sends the first DEL on keydown,
+    // then after a short hold we emit DEL on an interval until the key is released
+    // (keyup), focus is lost, or a safety cap is hit. If the platform DOES deliver
+    // native key-repeat (e.repeat), we stand down and let it drive (e.g. Android).
+    private setupKeyRepeat() {
+        const ta = this.container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
+        if (!ta) return;
+        const DEL = '\x7f';
+        const INITIAL = 400; // ms held before the repeat kicks in
+        const INTERVAL = 70; // ms between repeats while held
+        const CAP = 400; // safety: stop after this many repeats if a keyup is ever missed
+        let delay = 0;
+        let timer = 0;
+        let count = 0;
+        const stop = () => {
+            if (delay) {
+                clearTimeout(delay);
+                delay = 0;
+            }
+            if (timer) {
+                clearInterval(timer);
+                timer = 0;
+            }
+            count = 0;
+        };
+        const isBack = (e: KeyboardEvent) => e.key === 'Backspace' || e.keyCode === 8;
+        const onDown = (e: KeyboardEvent) => {
+            if (!isBack(e)) return;
+            if (e.repeat) {
+                stop(); // native auto-repeat is firing — don't double it
+                return;
+            }
+            stop();
+            delay = window.setTimeout(() => {
+                timer = window.setInterval(() => {
+                    if (++count > CAP) {
+                        stop(); // safety net if a keyup was ever missed
+                        return;
+                    }
+                    this.xterm.sendData(DEL);
+                }, INTERVAL);
+            }, INITIAL);
+        };
+        const onUp = (e: KeyboardEvent) => {
+            if (isBack(e)) stop();
+        };
+        // Capture phase is required: xterm stops immediate propagation of keydown
+        // on this textarea in the bubble phase, so a bubble-phase listener here
+        // would never fire. We don't preventDefault, so xterm still sends the
+        // first DEL on its own bubble-phase handler.
+        ta.addEventListener('keydown', onDown, true);
+        ta.addEventListener('keyup', onUp, true);
+        ta.addEventListener('blur', stop, true);
+        this.disposeKeyRepeat = () => {
+            stop();
+            ta.removeEventListener('keydown', onDown, true);
+            ta.removeEventListener('keyup', onUp, true);
+            ta.removeEventListener('blur', stop, true);
+        };
     }
 
     // Keyboard-aware layout. The soft keyboard floats over the page (the grid is
