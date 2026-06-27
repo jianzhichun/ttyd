@@ -14,8 +14,8 @@
 // so the gutter stays sparse: per-line times while output streams a line at a
 // time, and a single time marker on a bulk repaint.
 //
-// Times are formatted client-side via toLocaleTimeString → browser-local
-// timezone. Always on.
+// Stamps are formatted client-side from the local Date getters → browser-local
+// timezone, as a compact "MM-DD HH:MM:SS". Always on.
 import { IDisposable, ITerminalAddon, Terminal } from '@xterm/xterm';
 
 const STYLE_ID = 'ts-gutter-style';
@@ -59,7 +59,11 @@ export class TimestampAddon implements ITerminalAddon {
     }
 
     private fmt(ms: number): string {
-        return new Date(ms).toLocaleTimeString(undefined, { hour12: false });
+        // Local date + time (browser timezone, via the local Date getters).
+        // Compact MM-DD HH:MM:SS — year is omitted to keep the gutter narrow.
+        const d = new Date(ms);
+        const p = (n: number) => String(n).padStart(2, '0');
+        return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
     }
 
     // The gutter DOM needs terminal.element, which only exists after open(); build
