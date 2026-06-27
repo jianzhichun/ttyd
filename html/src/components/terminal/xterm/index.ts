@@ -198,6 +198,15 @@ export class Xterm {
         register(
             terminal.onSelectionChange(() => {
                 if (this.terminal.getSelection() === '') return;
+                // On touch a drag is a scroll/swipe gesture (tap forwards a click,
+                // long-press opens our menu) \u2014 there's no drag-to-select UX. The
+                // synthesized mouse events of a touch-drag still make xterm start a
+                // selection, so on coarse pointers wipe it instead of letting it
+                // linger over the screen / copy-on-select.
+                if (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) {
+                    this.terminal.clearSelection();
+                    return;
+                }
                 try {
                     document.execCommand('copy');
                 } catch (e) {

@@ -54,6 +54,20 @@ body {
     color: transparent !important;
 }
 
+// On touch, suppress native text selection + the iOS long-press callout over the
+// terminal: a drag is our scroll/swipe gesture and a long-press is our context
+// menu, never a select/copy. (xterm's own canvas selection is wiped in JS — see
+// Xterm.onSelectionChange.)
+@media (pointer: coarse) {
+    .xterm,
+    .xterm .xterm-screen,
+    .xterm .xterm-rows {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+    }
+}
+
 // Upload toast + progress bar (📎 button / Ctrl+V paste). Floats top-center over
 // the terminal; shown on desktop and mobile alike.
 // Portaled to <body> (NOT inside #terminal-root, whose will-change:transform
