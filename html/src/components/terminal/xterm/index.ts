@@ -184,6 +184,26 @@ export class Xterm {
         this.register(registerWrappedWebLinks(terminal));
         fitAddon.fit();
 
+        // The first fit() above can run before the container width AND the char-cell
+        // metrics have settled (xterm re-measures cell size once the font is actually
+        // applied — cell.width starts a touch wider, then snaps to its real value), so
+        // the grid lands a couple columns short and leaves a blank strip down the RIGHT
+        // edge until something forces a re-fit ("sometimes there's a gap"). Re-fit on
+        // every signal that geometry may have changed; fit() no-ops when cols/rows are
+        // unchanged, so the extra calls are cheap.
+        const firstRender = terminal.onRender(() => {
+            firstRender.dispose();
+            fitAddon.fit();
+        });
+        if (typeof ResizeObserver !== 'undefined') {
+            new ResizeObserver(() => fitAddon.fit()).observe(parent);
+        }
+        if (document.fonts?.ready) {
+            void document.fonts.ready.then(() => fitAddon.fit());
+        }
+        // Backstop in case cell metrics settle a few frames after first render.
+        window.setTimeout(() => fitAddon.fit(), 300);
+
         // Auto-reconnect when the tab is foregrounded again or the network returns —
         // mobile suspends a backgrounded tab and drops the socket, and we don't want
         // the user to have to hit Enter. Page-lifetime listeners (survive the
