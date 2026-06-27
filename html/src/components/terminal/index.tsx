@@ -628,6 +628,7 @@ export class Terminal extends Component<Props, State> {
             const dy = t.clientY - sy;
             if (Math.abs(dx) + Math.abs(dy) > 10) return; // a drag, not a tap
             this.sendClick(t.clientX, t.clientY);
+            this.tapRipple(t.clientX, t.clientY);
         };
         // Suppress the browser's own long-press callout/context menu on the canvas.
         const onCtx = (e: Event) => e.preventDefault();
@@ -810,6 +811,21 @@ export class Terminal extends Component<Props, State> {
         const col = Math.min(Math.max(Math.floor((clientX - rect.left) / (rect.width / term.cols)) + 1, 1), term.cols);
         const row = Math.min(Math.max(Math.floor((clientY - rect.top) / (rect.height / term.rows)) + 1, 1), term.rows);
         this.xterm.sendData(`\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`);
+    }
+
+    // Brief teal ripple at the tap point — mobile feedback that a tap landed and
+    // forwarded a click into the TUI (Claude Code's clickable affordances). Plain
+    // DOM appended to <body> at viewport coords (transform-proof, like the toast);
+    // self-removes when the animation ends.
+    private tapRipple(clientX: number, clientY: number) {
+        const r = document.createElement('div');
+        r.className = 'tap-ripple';
+        r.style.left = `${clientX}px`;
+        r.style.top = `${clientY}px`;
+        document.body.appendChild(r);
+        const done = () => r.remove();
+        r.addEventListener('animationend', done, { once: true });
+        window.setTimeout(done, 600); // fallback if animationend is missed
     }
 
     @bind

@@ -661,3 +661,30 @@ body {
 #swipe-hint.fired #swipe-handle .ar {
     stroke: #0b3d3e;
 }
+
+// Mobile tap feedback — a brief teal ripple at the touch point so a tap that
+// forwards a click into the TUI is visibly acknowledged (no hover on touch).
+// Portaled to <body> at viewport coords (transform-proof). Same teal accent as
+// the swipe hint / key bar, for a consistent feel.
+.tap-ripple {
+    position: fixed;
+    z-index: 60;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px; // centre the box on the (left, top) tap point
+    border-radius: 50%;
+    background: rgba(55, 230, 232, 0.22);
+    border: 1.5px solid rgba(55, 230, 232, 0.85);
+    pointer-events: none;
+    animation: tap-ripple 0.36s ease-out forwards;
+}
+@keyframes tap-ripple {
+    from {
+        transform: scale(0.35);
+        opacity: 0.95;
+    }
+    to {
+        transform: scale(2.6);
+        opacity: 0;
+    }
+}
