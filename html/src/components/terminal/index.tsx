@@ -627,9 +627,12 @@ export class Terminal extends Component<Props, State> {
             const dx = t.clientX - sx;
             const dy = t.clientY - sy;
             if (Math.abs(dx) + Math.abs(dy) > 10) return; // a drag, not a tap
-            this.sendClick(t.clientX, t.clientY);
+            // Let xterm's own synthesized-mouse handling deliver the tap: it focuses
+            // the hidden textarea (summons the iOS keyboard) and sends ONE mouse
+            // click to the app. We deliberately do NOT also send our own click —
+            // two clicks at the same cell read as a double-click and tmux runs
+            // select-word + copy ("copied N chars to tmux buffer"). Just the ripple.
             this.tapRipple(t.clientX, t.clientY);
-            window.term?.focus(); // tap focuses the hidden input → summon/keep keyboard
         };
         // Suppress the browser's own long-press callout/context menu on the canvas.
         const onCtx = (e: Event) => e.preventDefault();
@@ -638,24 +641,12 @@ export class Terminal extends Component<Props, State> {
         el.addEventListener('touchmove', onMove, { passive: true });
         el.addEventListener('touchend', onEnd, { passive: true });
         el.addEventListener('contextmenu', onCtx);
-        // The browser synthesizes mouse events from each touch; xterm would turn
-        // those into its OWN mouse report — on top of our explicit sendClick — so
-        // the app/tmux sees a DOUBLE click and tmux selects+copies a word ("copied
-        // N chars to tmux buffer"). On touch WE own all pointer input (sendClick /
-        // sendWheel / swipe / long-press menu), so swallow the synthesized mouse
-        // events before xterm's handlers see them, leaving sendClick the single
-        // click source. Capture phase + stopPropagation (not preventDefault), so it
-        // never reaches xterm yet default actions (focus) are untouched.
-        const swallowMouse = (ev: Event) => ev.stopPropagation();
-        const mouseTypes = ['mousedown', 'mousemove', 'mouseup', 'dblclick'];
-        mouseTypes.forEach(type => el.addEventListener(type, swallowMouse, true));
         this.disposeTap = () => {
             cancelLP();
             el.removeEventListener('touchstart', onStart);
             el.removeEventListener('touchmove', onMove);
             el.removeEventListener('touchend', onEnd);
             el.removeEventListener('contextmenu', onCtx);
-            mouseTypes.forEach(type => el.removeEventListener(type, swallowMouse, true));
         };
     }
 
@@ -810,20 +801,6 @@ export class Terminal extends Component<Props, State> {
 
     private sendWheel(button: number) {
         this.xterm.sendData(`\x1b[<${button};2;2M`);
-    }
-
-    // Translate a viewport tap into a terminal cell and emit an SGR left-click
-    // (press + release). getBoundingClientRect is transform-aware, so this stays
-    // correct even when the root is translated up over the floating keyboard.
-    private sendClick(clientX: number, clientY: number) {
-        const term = window.term;
-        const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
-        if (!term || !screen) return;
-        const rect = screen.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return;
-        const col = Math.min(Math.max(Math.floor((clientX - rect.left) / (rect.width / term.cols)) + 1, 1), term.cols);
-        const row = Math.min(Math.max(Math.floor((clientY - rect.top) / (rect.height / term.rows)) + 1, 1), term.rows);
-        this.xterm.sendData(`\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`);
     }
 
     // Brief teal ripple at the tap point — mobile feedback that a tap landed and
