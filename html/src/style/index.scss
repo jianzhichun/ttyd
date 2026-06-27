@@ -66,15 +66,20 @@ body {
 // punctuation silently don't reach the terminal. So the textarea is explicitly
 // forced back to selectable below.
 @media (pointer: coarse) {
-    .xterm .xterm-screen,
-    .xterm .xterm-rows {
+    // Kill native selection + the iOS callout over the WHOLE terminal (screen,
+    // rows, the a11y live-region, canvases…) so neither a tap nor a drag ever
+    // selects text. The one exception is `.xterm-helper-textarea`, the hidden
+    // input xterm types into — it must stay selectable or the caret/IME break,
+    // so it's forced back to selectable (and IME entry itself is recovered in
+    // Xterm.guardIme; the user-select bug is separate from that one).
+    .xterm * {
         -webkit-user-select: none;
         user-select: none;
         -webkit-touch-callout: none;
     }
-    .xterm .xterm-helper-textarea {
-        -webkit-user-select: text;
-        user-select: text;
+    .xterm-helper-textarea {
+        -webkit-user-select: text !important;
+        user-select: text !important;
     }
 }
 

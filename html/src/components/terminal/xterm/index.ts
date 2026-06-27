@@ -172,8 +172,60 @@ export class Xterm {
         terminal.loadAddon(this.timestampAddon);
 
         terminal.open(parent);
+        this.guardIme(parent);
         this.register(registerWrappedWebLinks(terminal));
         fitAddon.fit();
+    }
+
+    // iOS IME direct-input fix. On the iOS Chinese keyboard a literal space, digit
+    // or punctuation arrives as keydown(keyCode 229) → input(inputType:"insertText").
+    // The 229 keydown trips xterm's `_keyDownSeen`, and because iOS fires NO
+    // keypress, xterm's `_inputEvent` then refuses to emit the char (its
+    // `!_keyDownSeen` guard) — so spaces/digits/punctuation silently never reach
+    // the terminal while a CJK keyboard is up. (Latin keyboards are unaffected:
+    // real keyCodes, sent on keydown.) We can't patch xterm in node_modules, so
+    // recover exactly that dropped case here: a 229 keydown with NO keypress,
+    // followed by a non-composing insertText → send the char ourselves. The
+    // 229-and-no-keypress test means we never fire for Latin input (real keyCode,
+    // or a keypress did the send) nor for composition (pinyin → 汉字 is left to
+    // xterm's compositionend). Mobile only.
+    @bind
+    private guardIme(parent: HTMLElement) {
+        if (typeof matchMedia === 'undefined' || !matchMedia('(pointer: coarse)').matches) return;
+        const ta = parent.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
+        if (!ta) return;
+        let imeKey = false; // last keydown was an IME keydown (keyCode 229)
+        let keyPressed = false; // a keypress fired this key → xterm already sent it
+        let composing = false;
+        const reg = (type: string, fn: EventListener) => {
+            ta.addEventListener(type, fn, true);
+            this.register(toDisposable(() => ta.removeEventListener(type, fn, true)));
+        };
+        reg('keydown', (e: Event) => {
+            imeKey = (e as KeyboardEvent).keyCode === 229;
+            keyPressed = false;
+        });
+        reg('keypress', () => (keyPressed = true));
+        reg('compositionstart', () => {
+            composing = true;
+            imeKey = false;
+        });
+        reg('compositionend', () => {
+            composing = false;
+            imeKey = false;
+        });
+        reg('input', (e: Event) => {
+            const ie = e as InputEvent;
+            const dropped = imeKey && !keyPressed;
+            imeKey = false;
+            if (composing || ie.isComposing || !dropped) return;
+            if (ie.inputType === 'insertText' && ie.data) {
+                const d = ie.data;
+                ta.value = '';
+                if (this.inputHandler) this.inputHandler(d);
+                else this.sendData(d);
+            }
+        });
     }
 
     @bind
