@@ -1,25 +1,24 @@
-// Timestamp gutter — iTerm2-style "Show Timestamps", adapted for a repainting
-// TUI (Claude Code) relayed through tmux.
+// Timestamp gutter — when each visible row of output last changed, shown in a
+// right-side margin. Adapted for a repainting TUI (Claude Code) relayed through
+// tmux, where "stamp the row the browser just painted" is the wrong model: the
+// browser only sees the screen while it's connected, and on every (re)connect
+// tmux repaints the whole screen at once — so a client-side stamp reads "now" for
+// everything exactly when you return to the phone after being away, which defeats
+// the point (knowing when output actually happened).
 //
-// The naive "stamp every written row" model fails here: tmux repaints whole
-// regions (and the entire screen on connect / resize / window-switch), so most
-// rows get (re)written in the same instant — producing a solid column of
-// identical (or, on a partial repaint, alternating) times on every line.
-//
-// Instead we diff the visible rows each render:
-//   • a small change (≤ BULK rows) = genuine line-by-line output → stamp those rows
-//   • a large change (> BULK rows) = a repaint/scroll/switch → stamp the whole
-//     screen with one instant, so it collapses to a single timestamp
-// Then on display we hide blank rows and collapse runs sharing the same second,
-// so the gutter stays sparse: per-line times while output streams a line at a
-// time, and a single time marker on a bulk repaint.
+// So the times come from the SERVER: the cc-paste-upload sidecar polls each tmux
+// pane with `capture-pane`, diffs the lines, and records the real server time
+// each row last changed — continuously, regardless of any browser. We just fetch
+// that per-row table (same-origin __cctimes) and render it. The stamps therefore
+// reflect when output ACTUALLY happened, survive reconnect/refresh, and capture
+// activity that occurred while you weren't looking.
 //
 // Stamps are formatted client-side from the local Date getters → browser-local
 // timezone, as a compact "MM-DD HH:MM:SS". Always on.
 import { IDisposable, ITerminalAddon, Terminal } from '@xterm/xterm';
 
 const STYLE_ID = 'ts-gutter-style';
-const BULK = 3; // > this many rows changing in one render = a repaint, not output
+const POLL_MS = 800; // how often to refresh the per-row times from the server
 
 const CSS = `
 .ts-gutter{position:absolute;top:0;right:0;bottom:0;display:flex;flex-direction:column;pointer-events:none;z-index:9;font:11px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace}
@@ -31,23 +30,43 @@ const CSS = `
 export class TimestampAddon implements ITerminalAddon {
     private terminal?: Terminal;
     private disposables: IDisposable[] = [];
-    private times: (number | undefined)[] = []; // viewport row -> epoch ms
-    private lastText: string[] = []; // last rendered text per viewport row
+    private times: (number | undefined)[] = []; // pane row -> epoch ms (server time)
     private gutter?: HTMLDivElement;
     private rowEls: HTMLDivElement[] = [];
+    private pollId?: number;
 
     public activate(terminal: Terminal): void {
         this.terminal = terminal;
         this.injectStyle();
         this.disposables.push(terminal.onRender(() => this.paint()));
         this.disposables.push(terminal.onScroll(() => this.paint()));
+        this.fetchTimes();
+        this.pollId = window.setInterval(() => this.fetchTimes(), POLL_MS);
     }
 
     public dispose(): void {
         for (const d of this.disposables) d.dispose();
         this.disposables = [];
+        if (this.pollId) window.clearInterval(this.pollId);
         this.gutter?.remove();
         document.getElementById(STYLE_ID)?.remove();
+    }
+
+    // Pull the authoritative per-row change-times from the same-origin sidecar.
+    // On any failure keep the last-known times rather than blanking the gutter.
+    private async fetchTimes(): Promise<void> {
+        try {
+            const url = new URL('__cctimes', window.location.href).href;
+            const r = await fetch(url, { cache: 'no-store' });
+            if (!r.ok) return;
+            const data = await r.json();
+            if (Array.isArray(data?.ts)) {
+                this.times = data.ts as (number | undefined)[];
+                this.paint();
+            }
+        } catch {
+            /* transient — keep the previous times */
+        }
     }
 
     private injectStyle(): void {
@@ -61,11 +80,13 @@ export class TimestampAddon implements ITerminalAddon {
     private fmt(ms: number): string {
         // Local date + time (browser timezone, via the local Date getters), as a
         // compact MM-DD HH:MM:SS. The year is shown ONLY when the stamp is not from
-        // the current year, so same-year stamps stay narrow while an older one
-        // (e.g. scrollback that predates a New Year) is still unambiguous.
+        // the current year, so same-year stamps stay narrow while an older one is
+        // still unambiguous.
         const d = new Date(ms);
         const p = (n: number) => String(n).padStart(2, '0');
-        const dt = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        const dt = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(
+            d.getSeconds()
+        )}`;
         return d.getFullYear() === new Date().getFullYear() ? dt : `${d.getFullYear()}-${dt}`;
     }
 
@@ -98,53 +119,24 @@ export class TimestampAddon implements ITerminalAddon {
             extra?.remove();
         }
 
-        // Snapshot current visible text.
         const buf = term.buffer.active;
-        const cur: string[] = new Array(rows);
-        for (let i = 0; i < rows; i++) {
-            const line = buf.getLine(buf.viewportY + i);
-            cur[i] = line ? line.translateToString(true) : '';
-        }
 
-        // No-stamp zone: Claude Code's input box + status/hint lines are a
-        // persistent bottom UI that repaints on every keystroke and every spinner
-        // tick. Stamping it is both wrong (the user wants times on OUTPUT, not on
-        // their own input) and the source of flicker/duplicate stamps — and a bulk
-        // repaint of that box would otherwise re-stamp the whole screen, resetting
-        // the real output times to "now". The cursor lives in that input box, so
-        // everything from the box's top border (one row above the cursor) on down
-        // is excluded — from both display and the change classification. When the
-        // user scrolls up into history the cursor falls off-screen and liveTop
-        // becomes `rows`, so nothing is suppressed.
+        // No-stamp zone: Claude Code's input box + status line repaint constantly
+        // and aren't "output" — the cursor lives in that box, so suppress the
+        // cursor row, the box's top border one row above it, and everything below.
+        // (Scrolled into history → cursor off-screen → liveTop = rows → show all.)
         const cursorVRow = buf.baseY + buf.cursorY - buf.viewportY;
         const liveTop = cursorVRow > 0 && cursorVRow <= rows ? cursorVRow - 1 : rows;
 
-        if (this.lastText.length !== rows) {
-            // First paint or a resize — start from a clean slate, no stamps.
-            this.times = new Array(rows);
-        } else {
-            const changed: number[] = [];
-            for (let i = 0; i < liveTop; i++) {
-                if (cur[i] !== this.lastText[i]) changed.push(i);
-            }
-            if (changed.length > 0) {
-                const now = Date.now();
-                if (changed.length <= BULK) {
-                    for (const i of changed) this.times[i] = now; // line-by-line output
-                } else {
-                    for (let i = 0; i < liveTop; i++) this.times[i] = now; // bulk output repaint → one instant
-                }
-            }
-        }
-        this.lastText = cur;
-
-        // Display: skip the no-stamp zone and blank rows; within a run of equal
-        // seconds show it once.
+        // Display: server time per row (top-aligned); skip the no-stamp zone and
+        // blank rows, and collapse a run of rows sharing the same label to one.
         let prev = '';
         for (let i = 0; i < rows; i++) {
             const span = this.rowEls[i].firstChild as HTMLElement;
             const t = this.times[i];
-            if (i >= liveTop || !t || cur[i].trim() === '') {
+            const line = buf.getLine(buf.viewportY + i);
+            const blank = !line || line.translateToString(true).trim() === '';
+            if (i >= liveTop || !t || blank) {
                 span.textContent = '';
                 continue;
             }
