@@ -1,16 +1,26 @@
-// Timestamp gutter — iTerm2-style "Show Timestamps".
+// Timestamp gutter — iTerm2-style "Show Timestamps", adapted for a repainting
+// TUI (Claude Code) relayed through tmux.
 //
-// Records, per terminal row, the wall-clock time it was last written, and paints
-// those times in a right-side margin. The byte stream is never touched (Claude
-// Code and other TUIs repaint/scroll — injecting text into the stream would
-// corrupt rendering); the gutter is a pure overlay.
+// The naive "stamp every written row" model fails here: tmux repaints whole
+// regions (and the entire screen on connect / resize / window-switch), so most
+// rows get (re)written in the same instant — producing a solid column of
+// identical (or, on a partial repaint, alternating) times on every line.
 //
-// Time is formatted client-side via toLocaleTimeString → always the browser's
-// local timezone. Toggle with the clock button (state persisted, default on).
+// Instead we diff the visible rows each render:
+//   • a small change (≤ BULK rows) = genuine line-by-line output → stamp those rows
+//   • a large change (> BULK rows) = a repaint/scroll/switch → stamp the whole
+//     screen with one instant, so it collapses to a single timestamp
+// Then on display we hide blank rows and collapse runs sharing the same second,
+// so the gutter stays sparse: per-line times while output streams a line at a
+// time, and a single time marker on a bulk repaint.
+//
+// Times are formatted client-side via toLocaleTimeString → browser-local
+// timezone. Default on, 🕒 toggles (persisted).
 import { IDisposable, ITerminalAddon, Terminal } from '@xterm/xterm';
 
 const STORE = 'ttyd-ts-on';
 const STYLE_ID = 'ts-gutter-style';
+const BULK = 3; // > this many rows changing in one render = a repaint, not output
 
 const CSS = `
 .ts-gutter{position:absolute;top:0;right:0;bottom:0;display:flex;flex-direction:column;pointer-events:none;z-index:9;font:11px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace}
@@ -25,7 +35,8 @@ const CSS = `
 export class TimestampAddon implements ITerminalAddon {
     private terminal?: Terminal;
     private disposables: IDisposable[] = [];
-    private times: (number | undefined)[] = []; // viewport row index -> epoch ms
+    private times: (number | undefined)[] = []; // viewport row -> epoch ms
+    private lastText: string[] = []; // last rendered text per viewport row
     private gutter?: HTMLDivElement;
     private rowEls: HTMLDivElement[] = [];
     private toggleBtn?: HTMLButtonElement;
@@ -33,32 +44,6 @@ export class TimestampAddon implements ITerminalAddon {
     public activate(terminal: Terminal): void {
         this.terminal = terminal;
         this.injectStyle();
-        // Attach the stamp hooks immediately. activate() runs at loadAddon time,
-        // before terminal.open() and before any data is written, so the very
-        // first lines of a session are stamped too (no cold-start gap).
-        // Times are tracked per viewport row: the live terminal runs tmux with
-        // scrollback=0, so the xterm buffer is a fixed rows-high window. When a
-        // newline scrolls the screen, shift the time column up by one so each
-        // time stays aligned with the content that moved with it.
-        this.disposables.push(
-            terminal.onLineFeed(() => {
-                const b = terminal.buffer.active;
-                const last = terminal.rows - 1;
-                if (b.cursorY >= last) {
-                    this.times[last] = Date.now(); // bottom line just completed
-                    this.times.shift(); // …and scrolled up
-                    this.times[last] = undefined; // fresh empty bottom row
-                } else {
-                    this.times[Math.max(0, b.cursorY - 1)] = Date.now();
-                }
-            })
-        );
-        this.disposables.push(
-            terminal.onWriteParsed(() => {
-                const b = terminal.buffer.active;
-                this.times[b.cursorY] = Date.now(); // in-place updates (spinner, input box)
-            })
-        );
         this.disposables.push(terminal.onRender(() => this.paint()));
         this.disposables.push(terminal.onScroll(() => this.paint()));
     }
@@ -129,20 +114,40 @@ export class TimestampAddon implements ITerminalAddon {
             const extra = this.rowEls.pop();
             extra?.remove();
         }
-        // Declutter. A TUI like Claude Code repaints whole regions, and tmux
-        // repaints the entire screen on connect/resize — that would stamp every
-        // row with the same instant, i.e. a solid column of identical times on
-        // every line. So: (1) never stamp a blank row, and (2) within a run of
-        // rows sharing the same second, show the time only on the first. The
-        // result is a sparse column that only marks where the time changes.
+
+        // Snapshot current visible text.
         const buf = term.buffer.active;
+        const cur: string[] = new Array(rows);
+        for (let i = 0; i < rows; i++) {
+            const line = buf.getLine(buf.viewportY + i);
+            cur[i] = line ? line.translateToString(true) : '';
+        }
+
+        if (this.lastText.length !== rows) {
+            // First paint or a resize — start from a clean slate, no stamps.
+            this.times = new Array(rows);
+        } else {
+            const changed: number[] = [];
+            for (let i = 0; i < rows; i++) {
+                if (cur[i] !== this.lastText[i]) changed.push(i);
+            }
+            if (changed.length > 0) {
+                const now = Date.now();
+                if (changed.length <= BULK) {
+                    for (const i of changed) this.times[i] = now; // line-by-line output
+                } else {
+                    this.times = new Array(rows).fill(now); // repaint/scroll/switch → one instant
+                }
+            }
+        }
+        this.lastText = cur;
+
+        // Display: skip blank rows; within a run of equal seconds show it once.
         let prev = '';
         for (let i = 0; i < rows; i++) {
             const span = this.rowEls[i].firstChild as HTMLElement;
             const t = this.times[i];
-            const line = buf.getLine(buf.viewportY + i);
-            const blank = !line || line.translateToString(true).trim() === '';
-            if (blank || !t) {
+            if (!t || cur[i].trim() === '') {
                 span.textContent = '';
                 continue;
             }
