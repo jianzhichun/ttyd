@@ -1,5 +1,5 @@
 import { bind } from 'decko';
-import { Component, h } from 'preact';
+import { Component, createRef, Fragment, h, RefObject } from 'preact';
 import { createPortal } from 'preact/compat';
 import { Xterm, XtermOptions } from './xterm';
 
@@ -25,8 +25,28 @@ interface State {
 
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024; // keep in sync with server MAX_BYTES (2 GB)
 
+// Isolated, frozen host for xterm's DOM. xterm.open() appends its canvas/screen
+// directly into this div, OUTSIDE Preact's vdom — so the node must keep a stable
+// identity across re-renders, or the appended DOM is lost and the terminal blanks.
+// Two things guarantee that:
+//   1. render() gives this host a stable `key`, so a sibling toggling on/off (e.g.
+//      the upload-toast portal, which lives at the front of #terminal-root) can't
+//      shift its index and make Preact unmount+recreate it (keyless children are
+//      matched by position → a one-slot shift cascades into type mismatches).
+//   2. shouldComponentUpdate=false freezes the node so Preact never re-diffs it
+//      after mount (the host must therefore contain no Preact-managed children).
+class XtermHost extends Component<{ id: string; hostRef: RefObject<HTMLDivElement> }> {
+    shouldComponentUpdate() {
+        return false;
+    }
+    render() {
+        return <div id={this.props.id} ref={this.props.hostRef} />;
+    }
+}
+
 export class Terminal extends Component<Props, State> {
     private container: HTMLElement;
+    private hostRef = createRef<HTMLDivElement>();
     private root: HTMLElement;
     private xterm: Xterm;
     private disposeViewport?: () => void;
@@ -63,6 +83,7 @@ export class Terminal extends Component<Props, State> {
     }
 
     async componentDidMount() {
+        this.container = this.hostRef.current as HTMLElement;
         await this.xterm.refreshToken();
         this.xterm.open(this.container);
         this.xterm.inputHandler = this.handleInput; // route typed input through modifier logic
@@ -87,78 +108,95 @@ export class Terminal extends Component<Props, State> {
     render({ id }: Props, { modal, armed, upload, uploadPct, menu, capture, capCopied }: State) {
         return (
             <div id="terminal-root" ref={c => (this.root = c as HTMLElement)}>
-                {upload &&
-                    createPortal(
-                        <div id="upload-toast">
-                            <div class="upload-msg">{upload}</div>
-                            <div class="upload-track">
-                                <div class="upload-fill" style={`width:${uploadPct}%`} />
-                            </div>
-                        </div>,
-                        document.body
-                    )}
-                {menu &&
-                    createPortal(
-                        <div class="ctxmenu-backdrop" onClick={this.closeMenu}>
-                            <div
-                                class="ctxmenu"
-                                style={`left:${menu.x}px;top:${menu.y}px`}
-                                onClick={e => e.stopPropagation()}
-                            >
-                                <button type="button" class="ctxmenu-item" onClick={this.menuCapture}>
-                                    抓取并复制
-                                </button>
-                                <button type="button" class="ctxmenu-item" onClick={this.menuPaste}>
-                                    粘贴
-                                </button>
-                                <button type="button" class="ctxmenu-item" onClick={this.menuCopyVisible}>
-                                    复制可见屏
-                                </button>
-                            </div>
-                        </div>,
-                        document.body
-                    )}
-                {capture !== null &&
-                    createPortal(
-                        <div class="mt-preview" onClick={this.closeCapture}>
-                            <button class="mt-x" type="button" onClick={this.closeCapture} aria-label="close">
-                                ×
-                            </button>
-                            <div class="capview" onClick={e => e.stopPropagation()}>
-                                <div class="capview-bar">
-                                    <button type="button" class="capview-copy" onClick={this.copyCapture}>
-                                        {capCopied ? '已复制' : '复制全部'}
+                {/* Transient overlays (all portals to <body>) are wrapped in one
+                    always-present Fragment so #terminal-root's direct children keep
+                    a fixed shape. Inlined here, each toggling conditional would
+                    change the children array and shift the xterm host's slot, making
+                    Preact unmount+recreate the host and blank the terminal. */}
+                <Fragment key="overlays">
+                    {upload &&
+                        createPortal(
+                            <div id="upload-toast">
+                                <div class="upload-msg">{upload}</div>
+                                <div class="upload-track">
+                                    <div class="upload-fill" style={`width:${uploadPct}%`} />
+                                </div>
+                            </div>,
+                            document.body
+                        )}
+                    {menu &&
+                        createPortal(
+                            <div class="ctxmenu-backdrop" onClick={this.closeMenu}>
+                                <div
+                                    class="ctxmenu"
+                                    style={`left:${menu.x}px;top:${menu.y}px`}
+                                    onClick={e => e.stopPropagation()}
+                                >
+                                    <button type="button" class="ctxmenu-item" onClick={this.menuCapture}>
+                                        抓取并复制
+                                    </button>
+                                    <button type="button" class="ctxmenu-item" onClick={this.menuPaste}>
+                                        粘贴
+                                    </button>
+                                    <button type="button" class="ctxmenu-item" onClick={this.menuCopyVisible}>
+                                        复制可见屏
                                     </button>
                                 </div>
-                                <pre class="capview-text">{capture}</pre>
-                            </div>
-                        </div>,
-                        document.body
-                    )}
-                <div id={id} ref={c => (this.container = c as HTMLElement)}>
-                    <Modal show={modal}>
-                        <label class="file-label">
-                            <input onChange={this.sendFile} class="file-input" type="file" multiple />
-                            <span class="file-cta">Choose files…</span>
-                        </label>
-                    </Modal>
-                </div>
-                <KeyBar armed={armed} onKey={this.sendKey} onMod={this.toggleMod} onUpload={this.triggerUpload} />
-                <div id="swipe-hint" ref={c => (this.swipeHint = c as HTMLElement)}>
+                            </div>,
+                            document.body
+                        )}
+                    {capture !== null &&
+                        createPortal(
+                            <div class="mt-preview" onClick={this.closeCapture}>
+                                <button class="mt-x" type="button" onClick={this.closeCapture} aria-label="close">
+                                    ×
+                                </button>
+                                <div class="capview" onClick={e => e.stopPropagation()}>
+                                    <div class="capview-bar">
+                                        <button type="button" class="capview-copy" onClick={this.copyCapture}>
+                                            {capCopied ? '已复制' : '复制全部'}
+                                        </button>
+                                    </div>
+                                    <pre class="capview-text">{capture}</pre>
+                                </div>
+                            </div>,
+                            document.body
+                        )}
+                </Fragment>
+                {/* Stable keys on every direct child as belt-and-suspenders, on top
+                    of the fixed-shape children list above. */}
+                <XtermHost key="xterm-host" id={id} hostRef={this.hostRef} />
+                {/* Modal lives OUTSIDE the frozen xterm host (a frozen host can't
+                    re-render its children, so the modal would never open). */}
+                <Modal key="modal" show={modal}>
+                    <label class="file-label">
+                        <input onChange={this.sendFile} class="file-input" type="file" multiple />
+                        <span class="file-cta">Choose files…</span>
+                    </label>
+                </Modal>
+                <KeyBar
+                    key="keybar"
+                    armed={armed}
+                    onKey={this.sendKey}
+                    onMod={this.toggleMod}
+                    onUpload={this.triggerUpload}
+                />
+                <div key="swipe-hint" id="swipe-hint" ref={c => (this.swipeHint = c as HTMLElement)}>
                     <span id="swipe-arrow" ref={c => (this.swipeArrow = c as HTMLElement)} />
                     <span id="swipe-track">
                         <i id="swipe-fill" ref={c => (this.swipeFill = c as HTMLElement)} />
                     </span>
                 </div>
                 <input
+                    key="file-input"
                     ref={c => (this.fileInput = c as HTMLInputElement)}
                     type="file"
                     multiple
                     style="display:none"
                     onChange={this.onFilePicked}
                 />
-                <MediaTray />
-                <NotifyTray />
+                <MediaTray key="media-tray" />
+                <NotifyTray key="notify-tray" />
             </div>
         );
     }
