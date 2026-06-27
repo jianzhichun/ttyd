@@ -543,7 +543,7 @@ export class Terminal extends Component<Props, State> {
         const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
         if (!coarse) return;
         const el = this.container;
-        const STEP = 24; // px of vertical drag per wheel notch
+        const STEP = 16; // px of vertical drag per wheel notch
         const THRESH_T = 48; // px of horizontal travel for one window switch
         let sx = 0;
         let sy = 0;
@@ -590,9 +590,9 @@ export class Terminal extends Component<Props, State> {
         let momV = 0; // current coast velocity, px/ms
         let momAccum = 0; // px accumulated toward the next notch
         let momT = 0;
-        const FRICTION = 0.95; // velocity retained per ~16ms frame
+        const FRICTION = 0.97; // velocity retained per ~16ms frame (higher = longer coast)
         const V_FLICK = 0.25; // px/ms — minimum release speed to start coasting
-        const V_STOP = 0.04; // px/ms — coast ends below this
+        const V_STOP = 0.025; // px/ms — coast ends below this (low → tapers smoothly to a stop)
         const momStep = (now: number) => {
             const dt = now - momT || 16;
             momT = now;
