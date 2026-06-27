@@ -487,16 +487,51 @@ export class Terminal extends Component<Props, State> {
         const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
         if (!vv || !coarse) return;
         const keybar = this.root.querySelector('#keybar') as HTMLElement | null;
+        // ?vvdebug=1 → tiny overlay of the raw viewport numbers (to diagnose
+        // device-specific keyboard geometry). Inert for everyone else.
+        let dbgEl: HTMLElement | null = null;
+        if (location.search.indexOf('vvdebug') >= 0) {
+            dbgEl = document.createElement('div');
+            dbgEl.style.cssText =
+                'position:fixed;top:0;left:0;z-index:99999;background:rgba(0,0,0,.85);color:#3f6;font:10px monospace;padding:3px 5px;white-space:pre;pointer-events:none';
+            document.body.appendChild(dbgEl);
+        }
 
-        let lastKb = -1; // last applied values → skip no-op style writes (cheap re-applies)
+        let curKbT = 0; // current keybar translateY (px) — incremental measure + no-op skip
         let lastLift = -1;
         const apply = () => {
             const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
             this.kbShown = kb > 1; // soft keyboard is up iff the visual viewport shrank
-            // key bar hugs the top edge of the keyboard
-            if (keybar && kb !== lastKb) {
-                keybar.style.transform = kb > 1 ? `translateY(${-kb}px)` : '';
-                lastKb = kb;
+            // Pin the keybar's BOTTOM to the keyboard's top edge (= the visual
+            // viewport's bottom edge in screen coords), measured from the bar's REAL
+            // on-screen box. translateY(-kb) assumes the bar sits exactly at the
+            // layout-viewport bottom, but iOS scrolls/offsets that frame when the
+            // keyboard opens → the bar floats too high with a gap below it. Measuring
+            // the actual box and translating the delta is immune to that.
+            if (keybar) {
+                if (kb <= 1) {
+                    if (curKbT !== 0) {
+                        keybar.style.transform = '';
+                        curKbT = 0;
+                    }
+                } else {
+                    const target = vv.offsetTop + vv.height; // screen-y of keyboard's top
+                    const naturalBottom = keybar.getBoundingClientRect().bottom - curKbT;
+                    const t = Math.round(target - naturalBottom);
+                    if (t !== curKbT) {
+                        keybar.style.transform = `translateY(${t}px)`;
+                        curKbT = t;
+                    }
+                }
+            }
+            if (dbgEl) {
+                const r = keybar?.getBoundingClientRect();
+                dbgEl.textContent =
+                    `ih=${window.innerHeight} vvh=${Math.round(vv.height)} ` +
+                    `vvoT=${Math.round(vv.offsetTop)} sY=${Math.round(window.scrollY)} ` +
+                    `kb=${Math.round(kb)} kbT=${curKbT}\n` +
+                    `kbBot=${r ? Math.round(r.bottom) : '-'} kbH=${keybar?.offsetHeight ?? '-'} ` +
+                    `tgt=${Math.round(vv.offsetTop + vv.height)}`;
             }
             const term = window.term;
             const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
@@ -516,7 +551,7 @@ export class Terminal extends Component<Props, State> {
             // the settle re-apply below corrects it once measurements are stable.
             if (!(cellH > 6)) return;
             const cursorBottom = 5 /* .terminal padding */ + (term.buffer.active.cursorY + 1) * cellH;
-            const keybarTop = window.innerHeight - kb - keybar.offsetHeight;
+            const keybarTop = vv.offsetTop + vv.height - keybar.offsetHeight; // = keybar's pinned top
             // lift just enough to leave one row of breathing room above the key bar
             const lift = Math.max(0, cursorBottom - (keybarTop - Math.round(cellH)));
             if (lift !== lastLift) {
@@ -555,6 +590,7 @@ export class Terminal extends Component<Props, State> {
             cursorMove?.dispose();
             this.container.style.transform = '';
             if (keybar) keybar.style.transform = '';
+            dbgEl?.remove();
         };
     }
 
