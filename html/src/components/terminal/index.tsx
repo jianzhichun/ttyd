@@ -488,44 +488,70 @@ export class Terminal extends Component<Props, State> {
         if (!vv || !coarse) return;
         const keybar = this.root.querySelector('#keybar') as HTMLElement | null;
 
+        let lastKb = -1; // last applied values → skip no-op style writes (cheap re-applies)
+        let lastLift = -1;
         const apply = () => {
             const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
             this.kbShown = kb > 1; // soft keyboard is up iff the visual viewport shrank
             // key bar hugs the top edge of the keyboard
-            if (keybar) keybar.style.transform = kb > 1 ? `translateY(${-kb}px)` : '';
+            if (keybar && kb !== lastKb) {
+                keybar.style.transform = kb > 1 ? `translateY(${-kb}px)` : '';
+                lastKb = kb;
+            }
             const term = window.term;
             const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
             if (kb <= 1 || !term || !screen || !keybar) {
-                this.container.style.transform = '';
+                if (lastLift !== 0) {
+                    this.container.style.transform = '';
+                    lastLift = 0;
+                }
                 return;
             }
             // cursor's bottom edge in the untranslated layout (offsetHeight is
             // transform-independent, so this never feeds back on our own transform).
             const cellH = screen.offsetHeight / (term.rows || 1);
+            // Mid-reflow, offsetHeight can momentarily read 0/tiny; a bad cellH would
+            // compute lift≈0 and drop the input behind the keyboard ("keybar floats
+            // but input stays covered"). Skip such a frame, keep the last good lift —
+            // the settle re-apply below corrects it once measurements are stable.
+            if (!(cellH > 6)) return;
             const cursorBottom = 5 /* .terminal padding */ + (term.buffer.active.cursorY + 1) * cellH;
             const keybarTop = window.innerHeight - kb - keybar.offsetHeight;
             // lift just enough to leave one row of breathing room above the key bar
             const lift = Math.max(0, cursorBottom - (keybarTop - Math.round(cellH)));
-            this.container.style.transform = lift > 0 ? `translateY(${-lift}px)` : '';
+            if (lift !== lastLift) {
+                this.container.style.transform = lift > 0 ? `translateY(${-lift}px)` : '';
+                lastLift = lift;
+            }
         };
 
         // coalesce bursts (keyboard slide animation, rapid cursor moves) to 1/frame
         let raf = 0;
-        const onChange = () => {
-            if (raf) return;
-            raf = requestAnimationFrame(() => {
-                raf = 0;
-                apply();
-            });
+        let settle = 0;
+        const sync = () => {
+            if (!raf)
+                raf = requestAnimationFrame(() => {
+                    raf = 0;
+                    apply();
+                });
         };
-        vv.addEventListener('resize', onChange);
-        vv.addEventListener('scroll', onChange);
-        const cursorMove = window.term?.onCursorMove(onChange); // follow the input line as you type
+        // Keyboard geometry changed: sync now, AND re-apply once the slide settles —
+        // iOS frequently omits the final resize event, leaving an intermediate value
+        // latched (keybar up, input not lifted). The trailing apply fixes that.
+        const onViewport = () => {
+            sync();
+            if (settle) clearTimeout(settle);
+            settle = window.setTimeout(apply, 320);
+        };
+        vv.addEventListener('resize', onViewport);
+        vv.addEventListener('scroll', onViewport);
+        const cursorMove = window.term?.onCursorMove(sync); // follow the input line as you type
         apply();
         this.disposeViewport = () => {
             if (raf) cancelAnimationFrame(raf);
-            vv.removeEventListener('resize', onChange);
-            vv.removeEventListener('scroll', onChange);
+            if (settle) clearTimeout(settle);
+            vv.removeEventListener('resize', onViewport);
+            vv.removeEventListener('scroll', onViewport);
             cursorMove?.dispose();
             this.container.style.transform = '';
             if (keybar) keybar.style.transform = '';
