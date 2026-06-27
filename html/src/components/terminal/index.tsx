@@ -629,6 +629,7 @@ export class Terminal extends Component<Props, State> {
             if (Math.abs(dx) + Math.abs(dy) > 10) return; // a drag, not a tap
             this.sendClick(t.clientX, t.clientY);
             this.tapRipple(t.clientX, t.clientY);
+            window.term?.focus(); // tap focuses the hidden input → summon/keep keyboard
         };
         // Suppress the browser's own long-press callout/context menu on the canvas.
         const onCtx = (e: Event) => e.preventDefault();
@@ -637,12 +638,24 @@ export class Terminal extends Component<Props, State> {
         el.addEventListener('touchmove', onMove, { passive: true });
         el.addEventListener('touchend', onEnd, { passive: true });
         el.addEventListener('contextmenu', onCtx);
+        // The browser synthesizes mouse events from each touch; xterm would turn
+        // those into its OWN mouse report — on top of our explicit sendClick — so
+        // the app/tmux sees a DOUBLE click and tmux selects+copies a word ("copied
+        // N chars to tmux buffer"). On touch WE own all pointer input (sendClick /
+        // sendWheel / swipe / long-press menu), so swallow the synthesized mouse
+        // events before xterm's handlers see them, leaving sendClick the single
+        // click source. Capture phase + stopPropagation (not preventDefault), so it
+        // never reaches xterm yet default actions (focus) are untouched.
+        const swallowMouse = (ev: Event) => ev.stopPropagation();
+        const mouseTypes = ['mousedown', 'mousemove', 'mouseup', 'dblclick'];
+        mouseTypes.forEach(type => el.addEventListener(type, swallowMouse, true));
         this.disposeTap = () => {
             cancelLP();
             el.removeEventListener('touchstart', onStart);
             el.removeEventListener('touchmove', onMove);
             el.removeEventListener('touchend', onEnd);
             el.removeEventListener('contextmenu', onCtx);
+            mouseTypes.forEach(type => el.removeEventListener(type, swallowMouse, true));
         };
     }
 

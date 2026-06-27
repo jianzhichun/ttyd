@@ -103,6 +103,11 @@ export class Xterm {
     private doReconnect = true;
     private closeOnDisconnect = false;
 
+    // pointer: coarse (touch) — computed once and reused; gates the mobile-only
+    // paths (IME direct-input recovery, selection-clear) instead of re-running
+    // matchMedia on every selection change / key event.
+    private coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+
     // optional transform for typed input (sticky-modifier handling lives in the
     // Preact layer); when set, all terminal.onData goes through it instead of
     // straight to sendData.
@@ -191,7 +196,7 @@ export class Xterm {
     // xterm's compositionend). Mobile only.
     @bind
     private guardIme(parent: HTMLElement) {
-        if (typeof matchMedia === 'undefined' || !matchMedia('(pointer: coarse)').matches) return;
+        if (!this.coarse) return;
         const ta = parent.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
         if (!ta) return;
         let imeKey = false; // last keydown was an IME keydown (keyCode 229)
@@ -255,7 +260,7 @@ export class Xterm {
                 // synthesized mouse events of a touch-drag still make xterm start a
                 // selection, so on coarse pointers wipe it instead of letting it
                 // linger over the screen / copy-on-select.
-                if (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) {
+                if (this.coarse) {
                     this.terminal.clearSelection();
                     return;
                 }
