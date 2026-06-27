@@ -103,9 +103,6 @@ export class Xterm {
     private doReconnect = true;
     private closeOnDisconnect = false;
 
-    // iOS Chinese IME guard: true while a composition is in flight (see open()).
-    private composing = false;
-
     // optional transform for typed input (sticky-modifier handling lives in the
     // Preact layer); when set, all terminal.onData goes through it instead of
     // straight to sendData.
@@ -175,35 +172,8 @@ export class Xterm {
         terminal.loadAddon(this.timestampAddon);
 
         terminal.open(parent);
-        this.guardIme(parent);
         this.register(registerWrappedWebLinks(terminal));
         fitAddon.fit();
-    }
-
-    // iOS Chinese (Pinyin) IME guard. The Pinyin keyboard commits a candidate
-    // with Space — or a digit 1-9 to pick the Nth — but xterm's keydown handler
-    // treats those as terminal input and preventDefault()s them before the IME
-    // can act, so the candidate never commits and spaces/digits seem to "do
-    // nothing". xterm's own "are we composing?" check is unreliable on iOS, so
-    // track composition from the textarea's composition events (which DO fire)
-    // and tell xterm to skip EVERY keydown while composing — the committed text
-    // still arrives via compositionend → onData. Outside composition: unchanged.
-    @bind
-    private guardIme(parent: HTMLElement) {
-        const ta = parent.querySelector('.xterm-helper-textarea');
-        if (ta) {
-            const on = () => (this.composing = true);
-            const off = () => (this.composing = false);
-            ta.addEventListener('compositionstart', on);
-            ta.addEventListener('compositionend', off);
-            this.register({
-                dispose: () => {
-                    ta.removeEventListener('compositionstart', on);
-                    ta.removeEventListener('compositionend', off);
-                },
-            });
-        }
-        this.terminal.attachCustomKeyEventHandler(e => !(this.composing || e.isComposing || e.keyCode === 229));
     }
 
     @bind

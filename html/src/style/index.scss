@@ -58,13 +58,23 @@ body {
 // terminal: a drag is our scroll/swipe gesture and a long-press is our context
 // menu, never a select/copy. (xterm's own canvas selection is wiped in JS — see
 // Xterm.onSelectionChange.)
+//
+// Scope this to the DISPLAY layers only, NOT the `.xterm` root: the root also
+// holds `.xterm-helper-textarea`, the hidden input xterm types into, and on iOS
+// `-webkit-user-select: none` on (or inherited by) an editable element is a
+// known WebKit bug that breaks IME entry — Chinese-keyboard space/digits/
+// punctuation silently don't reach the terminal. So the textarea is explicitly
+// forced back to selectable below.
 @media (pointer: coarse) {
-    .xterm,
     .xterm .xterm-screen,
     .xterm .xterm-rows {
         -webkit-user-select: none;
         user-select: none;
         -webkit-touch-callout: none;
+    }
+    .xterm .xterm-helper-textarea {
+        -webkit-user-select: text;
+        user-select: text;
     }
 }
 
