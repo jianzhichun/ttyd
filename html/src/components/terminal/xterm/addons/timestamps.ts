@@ -99,12 +99,25 @@ export class TimestampAddon implements ITerminalAddon {
             cur[i] = line ? line.translateToString(true) : '';
         }
 
+        // No-stamp zone: Claude Code's input box + status/hint lines are a
+        // persistent bottom UI that repaints on every keystroke and every spinner
+        // tick. Stamping it is both wrong (the user wants times on OUTPUT, not on
+        // their own input) and the source of flicker/duplicate stamps — and a bulk
+        // repaint of that box would otherwise re-stamp the whole screen, resetting
+        // the real output times to "now". The cursor lives in that input box, so
+        // everything from the box's top border (one row above the cursor) on down
+        // is excluded — from both display and the change classification. When the
+        // user scrolls up into history the cursor falls off-screen and liveTop
+        // becomes `rows`, so nothing is suppressed.
+        const cursorVRow = buf.baseY + buf.cursorY - buf.viewportY;
+        const liveTop = cursorVRow > 0 && cursorVRow <= rows ? cursorVRow - 1 : rows;
+
         if (this.lastText.length !== rows) {
             // First paint or a resize — start from a clean slate, no stamps.
             this.times = new Array(rows);
         } else {
             const changed: number[] = [];
-            for (let i = 0; i < rows; i++) {
+            for (let i = 0; i < liveTop; i++) {
                 if (cur[i] !== this.lastText[i]) changed.push(i);
             }
             if (changed.length > 0) {
@@ -112,18 +125,19 @@ export class TimestampAddon implements ITerminalAddon {
                 if (changed.length <= BULK) {
                     for (const i of changed) this.times[i] = now; // line-by-line output
                 } else {
-                    this.times = new Array(rows).fill(now); // repaint/scroll/switch → one instant
+                    for (let i = 0; i < liveTop; i++) this.times[i] = now; // bulk output repaint → one instant
                 }
             }
         }
         this.lastText = cur;
 
-        // Display: skip blank rows; within a run of equal seconds show it once.
+        // Display: skip the no-stamp zone and blank rows; within a run of equal
+        // seconds show it once.
         let prev = '';
         for (let i = 0; i < rows; i++) {
             const span = this.rowEls[i].firstChild as HTMLElement;
             const t = this.times[i];
-            if (!t || cur[i].trim() === '') {
+            if (i >= liveTop || !t || cur[i].trim() === '') {
                 span.textContent = '';
                 continue;
             }
