@@ -489,11 +489,8 @@ export class Terminal extends Component<Props, State> {
         const keybar = this.root.querySelector('#keybar') as HTMLElement | null;
         // ?vvdebug=1 → tiny overlay of the raw viewport numbers (to diagnose
         // device-specific keyboard geometry). Inert for everyone else.
-        // ?vvdebug=1, or auto in standalone (home-screen App) mode where there's no
-        // address bar to add the param. (Temporary — for diagnosing keyboard geometry.)
-        const dbgOn =
-            location.search.indexOf('vvdebug') >= 0 ||
-            (navigator as Navigator & { standalone?: boolean }).standalone === true;
+        // ?vvdebug=1 → tiny overlay of the raw viewport numbers (keyboard-geometry diagnosis).
+        const dbgOn = location.search.indexOf('vvdebug') >= 0;
         let dbgEl: HTMLElement | null = null;
         if (dbgOn) {
             dbgEl = document.createElement('div');
