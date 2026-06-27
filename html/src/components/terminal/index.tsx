@@ -528,9 +528,13 @@ export class Terminal extends Component<Props, State> {
             }
             if (dbgEl) {
                 const r = keybar?.getBoundingClientRect();
+                const sc = document.querySelector('.xterm-screen') as HTMLElement | null;
+                const scR = sc?.getBoundingClientRect();
                 dbgEl.textContent =
                     `ih=${window.innerHeight} vvh=${Math.round(vv.height)} ` +
                     `iw=${window.innerWidth} vvw=${Math.round(vv.width)}\n` +
+                    `scW=${scR ? Math.round(scR.width) : '-'} ` +
+                    `rGap=${scR ? Math.round(window.innerWidth - scR.right) : '-'}\n` +
                     `vvoT=${Math.round(vv.offsetTop)} sY=${Math.round(window.scrollY)} ` +
                     `kb=${Math.round(kb)} kbT=${curKbT}\n` +
                     `kbBot=${r ? Math.round(r.bottom) : '-'} kbH=${keybar?.offsetHeight ?? '-'} ` +

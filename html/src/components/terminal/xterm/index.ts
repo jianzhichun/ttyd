@@ -201,8 +201,11 @@ export class Xterm {
         if (document.fonts?.ready) {
             void document.fonts.ready.then(() => fitAddon.fit());
         }
-        // Backstop in case cell metrics settle a few frames after first render.
-        window.setTimeout(() => fitAddon.fit(), 300);
+        // Backstops in case the container width / char-cell metrics finalize several
+        // frames later — iOS Safari/standalone can be noticeably slower than desktop to
+        // settle font metrics, so one 300ms shot wasn't enough. fit() no-ops when
+        // cols/rows are unchanged, so the repeats are cheap.
+        [120, 350, 800, 1500].forEach(d => window.setTimeout(() => fitAddon.fit(), d));
 
         // Auto-reconnect when the tab is foregrounded again or the network returns —
         // mobile suspends a backgrounded tab and drops the socket, and we don't want
@@ -240,9 +243,14 @@ export class Xterm {
         let imeKey = false; // last keydown was an IME keydown (keyCode 229)
         let keyPressed = false; // a keypress fired this key → xterm already sent it
         let composing = false;
+        // Page-lifetime listeners on the single, never-rebuilt helper textarea —
+        // deliberately NOT this.register(). dispose() runs on every socket close
+        // (i.e. every auto-reconnect), but guardIme is only called once from open(),
+        // so registering these would let the first reconnect tear them down for good
+        // and silently kill CJK space/digit input again. The textarea outlives every
+        // socket, so these never need teardown.
         const reg = (type: string, fn: EventListener) => {
             ta.addEventListener(type, fn, true);
-            this.register(toDisposable(() => ta.removeEventListener(type, fn, true)));
         };
         reg('keydown', (e: Event) => {
             imeKey = (e as KeyboardEvent).keyCode === 229;
