@@ -20,6 +20,10 @@ import { IDisposable, ITerminalAddon, Terminal } from '@xterm/xterm';
 
 const STYLE_ID = 'ts-gutter-style';
 const POLL_MS = 800; // how often to refresh the per-row times from the server
+// Stamp density: anchored at the newest stamp and walking up, show only one time
+// per this window — blocks within MERGE_MS of the last shown stamp collapse into
+// it. Keeps the gutter readable instead of one stamp per output block.
+const MERGE_MS = 5 * 60 * 1000;
 
 const CSS = `
 .ts-gutter{position:absolute;top:0;right:0;bottom:0;display:flex;flex-direction:column;pointer-events:none;z-index:9;font:11px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace}
@@ -36,7 +40,7 @@ export class TimestampAddon implements ITerminalAddon {
     private gutter?: HTMLDivElement;
     private rowEls: HTMLDivElement[] = [];
     private rowLabels: string[] = []; // last text painted per row → skip no-op DOM writes
-    private rawScratch: string[] = []; // reused per-row time-string buffer (paint pass 1)
+    private msScratch: number[] = []; // reused per-row settle-ms buffer (0 = no stamp; paint pass 1)
     private pollId?: number;
     private rafId = 0; // coalesces render/scroll bursts to one paint per frame
 
@@ -156,28 +160,33 @@ export class TimestampAddon implements ITerminalAddon {
         const cursorVRow = buf.baseY + buf.cursorY - buf.viewportY;
         const liveTop = cursorVRow > 0 && cursorVRow <= rows ? cursorVRow - 1 : rows;
 
-        // Display: server time per row (top-aligned); skip the no-stamp zone and
-        // blank rows, and collapse a run of rows sharing the same label to one.
-        // Pass 1: each row's raw time string ('' when nothing stamps there). The
-        // cheap rejects (input-box zone / no server time) gate the costly
-        // translateToString so timeless rows never pay for it.
-        const raw = this.rawScratch;
-        raw.length = rows;
+        // Pass 1: each row's settle-ms (0 = no stamp). The cheap rejects (input-box
+        // zone / no server time) gate the costly translateToString so timeless rows
+        // never pay for it; the blank check drops stamps on rows the browser
+        // currently renders empty (transient client/server skew).
+        const ms = this.msScratch;
+        ms.length = rows;
         for (let i = 0; i < rows; i++) {
-            let s = '';
+            let v = 0;
             const t = this.times[i];
             if (i < liveTop && t) {
                 const line = buf.getLine(buf.viewportY + i);
-                if (line && line.translateToString(true).trim() !== '') s = this.fmt(t);
+                if (line && line.translateToString(true).trim() !== '') v = t;
             }
-            raw[i] = s;
+            ms[i] = v;
         }
-        // Pass 2: stamp each block's time on its BOTTOM row (a block = a run of rows
-        // sharing one time). With the right-aligned gutter that reads as the
-        // bottom-right corner of the output block. Unchanged rows skip the DOM.
-        for (let i = 0; i < rows; i++) {
-            const s = raw[i];
-            const want = s && (i === rows - 1 || raw[i + 1] !== s) ? s : '';
+        // Pass 2: from the newest stamp upward, keep only one stamp per MERGE_MS
+        // window — older blocks within 5 min of the last shown stamp collapse into
+        // it — and place it on that block's BOTTOM row → bottom-right of the group,
+        // anchored at the newest. Unchanged rows skip the DOM.
+        let lastShown = 0;
+        for (let i = rows - 1; i >= 0; i--) {
+            const v = ms[i];
+            let want = '';
+            if (v && (lastShown === 0 || lastShown - v >= MERGE_MS)) {
+                want = this.fmt(v);
+                lastShown = v;
+            }
             if (this.rowLabels[i] === want) continue;
             this.rowLabels[i] = want;
             const span = this.rowEls[i].firstChild as HTMLElement;
