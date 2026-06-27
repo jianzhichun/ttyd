@@ -15,21 +15,17 @@
 // time, and a single time marker on a bulk repaint.
 //
 // Times are formatted client-side via toLocaleTimeString → browser-local
-// timezone. Default on, 🕒 toggles (persisted).
+// timezone. Always on.
 import { IDisposable, ITerminalAddon, Terminal } from '@xterm/xterm';
 
-const STORE = 'ttyd-ts-on';
 const STYLE_ID = 'ts-gutter-style';
 const BULK = 3; // > this many rows changing in one render = a repaint, not output
 
 const CSS = `
 .ts-gutter{position:absolute;top:0;right:0;bottom:0;display:flex;flex-direction:column;pointer-events:none;z-index:9;font:11px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-.xterm:not(.ts-on) .ts-gutter{display:none}
 .ts-row{flex:1 1 0;display:flex;align-items:center;justify-content:flex-end}
 .ts-row span:empty{display:none}
 .ts-row span{padding:0 4px;border-radius:3px;white-space:nowrap;background:rgba(0,0,0,.38);color:rgba(255,255,255,.5)}
-.ts-toggle{position:fixed;right:10px;bottom:10px;z-index:30;width:30px;height:30px;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:rgba(40,40,40,.8);color:#ddd;font-size:14px;line-height:1}
-.ts-toggle.active{border-color:#d8a657;color:#d8a657}
 `;
 
 export class TimestampAddon implements ITerminalAddon {
@@ -39,7 +35,6 @@ export class TimestampAddon implements ITerminalAddon {
     private lastText: string[] = []; // last rendered text per viewport row
     private gutter?: HTMLDivElement;
     private rowEls: HTMLDivElement[] = [];
-    private toggleBtn?: HTMLButtonElement;
 
     public activate(terminal: Terminal): void {
         this.terminal = terminal;
@@ -52,7 +47,6 @@ export class TimestampAddon implements ITerminalAddon {
         for (const d of this.disposables) d.dispose();
         this.disposables = [];
         this.gutter?.remove();
-        this.toggleBtn?.remove();
         document.getElementById(STYLE_ID)?.remove();
     }
 
@@ -74,24 +68,6 @@ export class TimestampAddon implements ITerminalAddon {
         this.gutter = document.createElement('div');
         this.gutter.className = 'ts-gutter';
         screen.appendChild(this.gutter);
-
-        this.toggleBtn = document.createElement('button');
-        this.toggleBtn.className = 'ts-toggle';
-        this.toggleBtn.title = 'Toggle timestamps';
-        this.toggleBtn.textContent = '\u{1F552}';
-        this.toggleBtn.addEventListener('click', () => {
-            const turningOn = localStorage.getItem(STORE) === '0';
-            localStorage.setItem(STORE, turningOn ? '1' : '0');
-            this.applyVisibility();
-        });
-        document.body.appendChild(this.toggleBtn);
-        this.applyVisibility();
-    }
-
-    private applyVisibility(): void {
-        const on = localStorage.getItem(STORE) !== '0'; // default on
-        this.terminal?.element?.classList.toggle('ts-on', on);
-        this.toggleBtn?.classList.toggle('active', on);
     }
 
     private paint(): void {
