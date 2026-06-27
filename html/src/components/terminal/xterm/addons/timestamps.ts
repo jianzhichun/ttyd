@@ -13,8 +13,9 @@
 // reflect when output ACTUALLY happened, survive reconnect/refresh, and capture
 // activity that occurred while you weren't looking.
 //
-// Stamps are formatted client-side from the local Date getters → browser-local
-// timezone, as a compact "MM-DD HH:MM:SS". Always on.
+// Stamps are formatted client-side in the browser-local timezone, widened only as
+// needed: HH:MM:SS today, MM-DD HH:MM:SS an earlier day, +year an earlier year.
+// Always on.
 import { IDisposable, ITerminalAddon, Terminal } from '@xterm/xterm';
 
 const STYLE_ID = 'ts-gutter-style';
@@ -78,16 +79,24 @@ export class TimestampAddon implements ITerminalAddon {
     }
 
     private fmt(ms: number): string {
-        // Local date + time (browser timezone, via the local Date getters), as a
-        // compact MM-DD HH:MM:SS. The year is shown ONLY when the stamp is not from
-        // the current year, so same-year stamps stay narrow while an older one is
-        // still unambiguous.
+        // Browser-local (the local Date getters), widened to show only the parts
+        // that differ from "now", so the gutter stays as narrow as possible:
+        //   today        → HH:MM:SS
+        //   earlier day  → MM-DD HH:MM:SS
+        //   earlier year → YYYY-MM-DD HH:MM:SS
         const d = new Date(ms);
+        const now = new Date();
         const p = (n: number) => String(n).padStart(2, '0');
-        const dt = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(
-            d.getSeconds()
-        )}`;
-        return d.getFullYear() === new Date().getFullYear() ? dt : `${d.getFullYear()}-${dt}`;
+        const time = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        if (
+            d.getFullYear() === now.getFullYear() &&
+            d.getMonth() === now.getMonth() &&
+            d.getDate() === now.getDate()
+        ) {
+            return time;
+        }
+        const md = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${time}`;
+        return d.getFullYear() === now.getFullYear() ? md : `${d.getFullYear()}-${md}`;
     }
 
     // The gutter DOM needs terminal.element, which only exists after open(); build
