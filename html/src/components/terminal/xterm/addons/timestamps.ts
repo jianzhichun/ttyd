@@ -59,11 +59,14 @@ export class TimestampAddon implements ITerminalAddon {
     }
 
     private fmt(ms: number): string {
-        // Local date + time (browser timezone, via the local Date getters).
-        // Compact MM-DD HH:MM:SS — year is omitted to keep the gutter narrow.
+        // Local date + time (browser timezone, via the local Date getters), as a
+        // compact MM-DD HH:MM:SS. The year is shown ONLY when the stamp is not from
+        // the current year, so same-year stamps stay narrow while an older one
+        // (e.g. scrollback that predates a New Year) is still unambiguous.
         const d = new Date(ms);
         const p = (n: number) => String(n).padStart(2, '0');
-        return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        const dt = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        return d.getFullYear() === new Date().getFullYear() ? dt : `${d.getFullYear()}-${dt}`;
     }
 
     // The gutter DOM needs terminal.element, which only exists after open(); build
