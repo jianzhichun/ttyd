@@ -88,11 +88,7 @@ export class TimestampAddon implements ITerminalAddon {
         const now = new Date();
         const p = (n: number) => String(n).padStart(2, '0');
         const time = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-        if (
-            d.getFullYear() === now.getFullYear() &&
-            d.getMonth() === now.getMonth() &&
-            d.getDate() === now.getDate()
-        ) {
+        if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
             return time;
         }
         const md = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${time}`;
