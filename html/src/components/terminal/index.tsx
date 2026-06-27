@@ -941,7 +941,10 @@ export class Terminal extends Component<Props, State> {
             accX += e.deltaX;
             this.showSwipe(accX > 0, Math.min(1, Math.abs(accX) / THRESH));
             if (Math.abs(accX) >= THRESH) {
-                this.xterm.sendData(accX > 0 ? '\x02n' : '\x02p'); // left -> next, right -> prev
+                // Route through the sidecar (same as the touch path), NOT a bare 2-byte
+                // C-b prefix: the WebSocket can split '\x02n' so the 'n' leaks into Claude
+                // Code's input, and a hard-coded C-b breaks any non-default tmux prefix.
+                this.switchWindow(accX > 0 ? 'next' : 'prev'); // left -> next, right -> prev
                 this.fireSwipe();
                 armed = false;
                 accX = 0;

@@ -46,6 +46,10 @@ const termOptions = {
         brightWhite: '#f1f1f0',
     } as ITheme,
     allowProposedApi: true,
+    // Rescale a glyph that overflows its cell (wide CJK, some powerline/nerd glyphs)
+    // back into the cell instead of bleeding into the next column. webgl/canvas only,
+    // harmless to plain ASCII.
+    rescaleOverlappingGlyphs: true,
 } as ITerminalOptions;
 const flowControl = {
     limit: 100000,

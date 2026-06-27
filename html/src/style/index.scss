@@ -31,6 +31,9 @@ body {
     flex: 1 1 auto;
     min-height: 0;
     will-change: transform;
+    // Main tap surface: opt out of the iOS double-tap-to-zoom gesture (keybar / ctxmenu
+    // / capview already do). Our own touch handler owns taps and swipes here.
+    touch-action: manipulation;
     // NB: in the #terminal-root flex column, auto left/right margins would
     // defeat align-items:stretch and shrink-wrap the terminal (PC side gutters).
     align-self: stretch;

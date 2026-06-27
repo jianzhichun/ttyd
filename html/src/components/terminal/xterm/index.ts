@@ -92,6 +92,10 @@ export class Xterm {
     private webglAddon?: WebglAddon;
     private canvasAddon?: CanvasAddon;
     private zmodemAddon?: ZmodemAddon;
+    // Page-lifetime handle for the clickable-link provider. It only closes over
+    // `terminal` (which outlives every socket), so it lives OUTSIDE the socket-scoped
+    // `disposables` and is never torn down on reconnect — see open().
+    private linkProvider?: IDisposable;
 
     private socket?: WebSocket;
     private token: string;
@@ -181,7 +185,12 @@ export class Xterm {
 
         terminal.open(parent);
         this.guardIme(parent);
-        this.register(registerWrappedWebLinks(terminal));
+        // Page-lifetime: do NOT push into the socket-scoped `disposables`. dispose()
+        // runs on every socket close (every auto-reconnect) and initListeners() never
+        // re-registers the link provider — registering it here would make clickable
+        // links die for good after the first reconnect. The provider only closes over
+        // `terminal` (which outlives all sockets), so it needs no teardown.
+        this.linkProvider = registerWrappedWebLinks(terminal);
         fitAddon.fit();
 
         // The first fit() above can run before the container width AND the char-cell
@@ -259,6 +268,18 @@ export class Xterm {
         let acc = '';
         let replaying = false;
         let replayBuf = '';
+        // Clear dictation de-dup state whenever a dictation "session" can't still be
+        // running: a real keystroke, the start of CJK composition, or the textarea
+        // losing focus (mic dismissed / keyboard closed / window switch). Without this a
+        // stale `acc` makes the next dictation's opening word look like a prefix of the
+        // old text and get swallowed as a STOP-replay. NO idle timer on purpose — the
+        // final confirmation chunk arrives >1s late and equals `acc`, so clearing `acc`
+        // on a timer would let that chunk duplicate (the bug we removed earlier).
+        const resetDictation = () => {
+            acc = '';
+            replaying = false;
+            replayBuf = '';
+        };
 
         // TEMP on-screen event log (?vvdebug / ?imelog) to characterize how iOS really
         // delivers Dictation vs CJK-keyboard input on a real device — they can't be
@@ -292,6 +313,7 @@ export class Xterm {
         reg('keydown', (e: Event) => {
             imeKey = (e as KeyboardEvent).keyCode === 229;
             keyPressed = false;
+            resetDictation(); // a real keydown means we're no longer mid-dictation
             ev(`kd kc=${(e as KeyboardEvent).keyCode} ${JSON.stringify((e as KeyboardEvent).key)}`);
         });
         reg('keypress', () => {
@@ -301,6 +323,7 @@ export class Xterm {
         reg('compositionstart', () => {
             composing = true;
             imeKey = false;
+            resetDictation();
             ev('cs');
         });
         reg('compositionupdate', (e: Event) => ev(`cu ${JSON.stringify((e as CompositionEvent).data)}`));
@@ -308,6 +331,10 @@ export class Xterm {
             composing = false;
             imeKey = false;
             ev(`ce ${JSON.stringify((e as CompositionEvent).data)}`);
+        });
+        reg('blur', () => {
+            resetDictation(); // mic dismissed / keyboard closed / window switch
+            ev('blur reset');
         });
         // beforeinput logged too — its inputType often disambiguates dictation from a
         // keystroke before the value mutates. Pure diagnostics, no side effects.
@@ -327,16 +354,24 @@ export class Xterm {
             (e: Event) => {
                 if (e.target !== ta) return;
                 const ie = e as InputEvent;
+                // Each keydown/keypress maps to exactly one input event, so consume
+                // (snapshot + clear) the per-key flags HERE. Otherwise keyPressed stays
+                // true after typing and silently disables dictation de-dup when the user
+                // switches to dictation without an intervening keydown.
+                const wasImeKey = imeKey;
+                const wasKeyPressed = keyPressed;
+                imeKey = false;
+                keyPressed = false;
                 ev(
                     `in ${ie.inputType} d=${JSON.stringify(ie.data)} ic=${ie.isComposing} ` +
-                        `cm=${composing} drop=${imeKey && !keyPressed}`
+                        `cm=${composing} drop=${wasImeKey && !wasKeyPressed}`
                 );
 
                 // ---- iOS Dictation de-dup — ONLY for dictation ----
-                // Dictation has no 229 keydown and no keypress; the !imeKey &&
-                // !keyPressed guard keeps this off keyboard/Latin input (otherwise it
+                // Dictation has no 229 keydown and no keypress; the !wasImeKey &&
+                // !wasKeyPressed guard keeps this off keyboard/Latin input (otherwise it
                 // would swallow e.g. a second space or a repeated letter as a "dup").
-                if (ie.inputType === 'insertText' && !composing && !ie.isComposing && !imeKey && !keyPressed) {
+                if (ie.inputType === 'insertText' && !composing && !ie.isComposing && !wasImeKey && !wasKeyPressed) {
                     const d = ie.data ?? '';
                     if (replaying) {
                         const next = replayBuf + d;
@@ -387,8 +422,7 @@ export class Xterm {
                 // ---- CJK soft keyboard: recover the single char xterm drops ----
                 // A literal space/digit/punct arrives as 229 keydown + insertText with
                 // no keypress; xterm's _keyDownSeen guard then refuses it, so we resend.
-                const dropped = imeKey && !keyPressed;
-                imeKey = false;
+                const dropped = wasImeKey && !wasKeyPressed;
                 if (composing || ie.isComposing || !dropped) return;
                 const d = ie.data;
                 if (ie.inputType === 'insertText' && d && d.length === 1) {
@@ -510,6 +544,15 @@ export class Xterm {
 
     @bind
     public connect() {
+        // Single teardown point for socket-scoped disposables. reconnectNow() can win
+        // the race against the previous socket's close event — whose onSocketClose then
+        // early-returns WITHOUT disposing (its target is no longer this.socket), leaving
+        // the old cycle's terminal.onData / socket listeners attached. Re-running
+        // initListeners() on the new socket would then double them up → every keystroke
+        // sends twice (and RESIZE duplicates) until the next clean close. Disposing here
+        // makes connect() idempotent regardless of entry path (no-op on the first
+        // connect and right after onSocketClose already disposed).
+        this.dispose();
         this.socket = new WebSocket(this.options.wsUrl, ['tty']);
         const { socket, register } = this;
 
@@ -566,6 +609,11 @@ export class Xterm {
 
         // 1000: CLOSE_NORMAL
         if (event.code !== 1000 && doReconnect) {
+            // Hold `reconnecting` across the async refreshToken() so a watchdog /
+            // focus / visibilitychange reconnectNow() firing in that window can't
+            // start a SECOND socket (double WebSocket → double tmux attach / double
+            // PTY). onSocketOpen clears it once the new socket is up.
+            this.reconnecting = true;
             overlayAddon.showOverlay('Reconnecting...');
             refreshToken().then(connect);
         } else if (this.closeOnDisconnect) {
