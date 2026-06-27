@@ -191,6 +191,13 @@ export class Xterm {
         document.addEventListener('visibilitychange', this.reconnectNow);
         window.addEventListener('pageshow', this.reconnectNow);
         window.addEventListener('online', this.reconnectNow);
+        window.addEventListener('focus', this.reconnectNow);
+        // Watchdog: lifecycle events (visibilitychange/pageshow) are unreliable on
+        // iOS, especially home-screen/standalone mode, so don't depend on them. Every
+        // few seconds, if the tab is visible and the socket is dead, reconnect.
+        // reconnectNow self-guards (no-op while hidden, in flight, or already live),
+        // so this never hammers — it just guarantees recovery within a few seconds.
+        window.setInterval(this.reconnectNow, 3000);
     }
 
     // iOS IME direct-input fix. On the iOS Chinese keyboard a literal space, digit
