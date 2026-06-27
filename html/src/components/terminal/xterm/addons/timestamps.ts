@@ -26,6 +26,7 @@ const CSS = `
 .ts-row{flex:1 1 0;display:flex;align-items:center;justify-content:flex-end}
 .ts-row span:empty{display:none}
 .ts-row span{padding:0 4px;border-radius:3px;white-space:nowrap;background:rgba(0,0,0,.38);color:rgba(255,255,255,.5)}
+.ts-row .ts-z{margin-left:3px;font-size:9px;font-style:normal;opacity:.7}
 `;
 
 export class TimestampAddon implements ITerminalAddon {
@@ -151,7 +152,12 @@ export class TimestampAddon implements ITerminalAddon {
                 continue;
             }
             const label = this.fmt(t);
-            span.textContent = label === prev ? '' : label;
+            if (label === prev) {
+                span.textContent = '';
+            } else {
+                // time + a dim "UTC" tag so the gutter reads unambiguously as UTC
+                span.innerHTML = `${label}<i class="ts-z">UTC</i>`;
+            }
             prev = label;
         }
     }
