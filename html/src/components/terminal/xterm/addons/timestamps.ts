@@ -96,7 +96,7 @@ export class TimestampAddon implements ITerminalAddon {
             return;
         }
         for (let i = 0; i < next.length; i++) {
-            if (next[i] != null) this.times[i] = next[i];
+            if (typeof next[i] === 'number') this.times[i] = next[i];
         }
     }
 
