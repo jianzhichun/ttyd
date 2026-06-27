@@ -240,17 +240,25 @@ export class Xterm {
         if (!this.coarse) return;
         const ta = parent.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
         if (!ta) return;
+        // Discourage the mobile predictive/autocorrect layer that drives much of the
+        // duplicate-input grief (xterm.js #2403). Doesn't stop dictation's cumulative
+        // re-send (handled below), but cuts the autocorrect noise on top of it.
+        ta.setAttribute('autocorrect', 'off');
+        ta.setAttribute('autocapitalize', 'off');
+        ta.setAttribute('spellcheck', 'false');
         let imeKey = false; // last keydown was an IME keydown (keyCode 229)
         let keyPressed = false; // a keypress fired this key → xterm already sent it
         let composing = false;
-        // Dictation de-dup: iOS Dictation streams the WHOLE recognized text on each
-        // insertText ("A" → "ABC" → "ABC"), with no composition and no 229 keydown,
-        // and xterm re-sends each in full → "AABCABC". Track the cumulative value and
-        // emit only the new suffix; the FINAL confirmation chunk (identical text, often
-        // >1s after the last partial) then collapses to an empty delta and is dropped.
-        // No timer: lastData resets naturally whenever an insertText does NOT extend it
-        // (a genuinely new/normal input never starts with the old cumulative text).
-        let lastData = '';
+        // Dictation de-dup state. iOS Dictation streams the WHOLE recognized text on
+        // each insertText ("A"→"ABC"→"ABC"), no composition / no 229 keydown, and xterm
+        // re-sends each in full. `acc` = cumulative text committed this dictation
+        // session; we emit only the suffix delta. On STOP, iOS re-submits the whole
+        // text word-by-word (first chunk is a prefix of `acc`) → `replaying`/`replayBuf`
+        // swallow that whole re-submission. This logic runs ONLY for dictation (guarded
+        // by !imeKey && !keyPressed below) so it never touches keyboard/Latin input.
+        let acc = '';
+        let replaying = false;
+        let replayBuf = '';
 
         // TEMP on-screen event log (?vvdebug / ?imelog) to characterize how iOS really
         // delivers Dictation vs CJK-keyboard input on a real device — they can't be
@@ -324,23 +332,56 @@ export class Xterm {
                         `cm=${composing} drop=${imeKey && !keyPressed}`
                 );
 
-                // ---- iOS Dictation: collapse the cumulative stream to its delta ----
-                if (ie.inputType === 'insertText' && !composing && !ie.isComposing) {
+                // ---- iOS Dictation de-dup — ONLY for dictation ----
+                // Dictation has no 229 keydown and no keypress; the !imeKey &&
+                // !keyPressed guard keeps this off keyboard/Latin input (otherwise it
+                // would swallow e.g. a second space or a repeated letter as a "dup").
+                if (ie.inputType === 'insertText' && !composing && !ie.isComposing && !imeKey && !keyPressed) {
                     const d = ie.data ?? '';
-                    if (lastData !== '' && d.startsWith(lastData)) {
-                        const delta = d.slice(lastData.length);
-                        lastData = d;
-                        imeKey = false;
+                    if (replaying) {
+                        const next = replayBuf + d;
+                        if (acc.startsWith(next)) {
+                            replayBuf = next;
+                            if (next.length >= acc.length) {
+                                replaying = false;
+                                replayBuf = '';
+                                acc = '';
+                            }
+                            ev('  -> REPLAY (suppressed)');
+                            e.stopImmediatePropagation();
+                            return;
+                        }
+                        // diverged → not a replay after all; treat as new input
+                        replaying = false;
+                        replayBuf = '';
+                        acc = d;
+                    } else if (acc !== '' && d.startsWith(acc)) {
+                        const delta = d.slice(acc.length); // partial extends cumulative
+                        acc = d;
                         if (delta) {
                             send(delta);
                             ev(`  -> DELTA ${JSON.stringify(delta)}`);
                         } else {
                             ev('  -> DUP (suppressed)');
                         }
-                        e.stopImmediatePropagation(); // block xterm's full re-send
+                        e.stopImmediatePropagation();
                         return;
+                    } else if (acc.length > 1 && d.length < acc.length && acc.startsWith(d)) {
+                        // STOP: iOS re-submits the whole text word-by-word; the first
+                        // chunk is a prefix of acc. Swallow the entire re-submission.
+                        replaying = true;
+                        replayBuf = d;
+                        if (replayBuf.length >= acc.length) {
+                            replaying = false;
+                            replayBuf = '';
+                            acc = '';
+                        }
+                        ev('  -> REPLAY start (suppressed)');
+                        e.stopImmediatePropagation();
+                        return;
+                    } else {
+                        acc = d; // first segment / new text → let xterm send it
                     }
-                    lastData = d; // first segment / normal char → let xterm send it
                 }
 
                 // ---- CJK soft keyboard: recover the single char xterm drops ----
@@ -773,7 +814,12 @@ export class Xterm {
                 enableCanvasRenderer();
                 break;
             case 'webgl':
-                enableWebglRenderer();
+                // iOS Safari's WebGL is janky and drops its GPU context whenever the
+                // tab is backgrounded, forcing a canvas fallback each time (churn +
+                // flicker + jank — xterm.js #3357/#5816). On touch devices just use the
+                // canvas renderer from the start; it's smooth and stable there.
+                if (this.coarse) enableCanvasRenderer();
+                else enableWebglRenderer();
                 break;
             case 'dom':
                 disposeWebglRenderer();
