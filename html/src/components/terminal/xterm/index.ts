@@ -243,6 +243,12 @@ export class Xterm {
         let imeKey = false; // last keydown was an IME keydown (keyCode 229)
         let keyPressed = false; // a keypress fired this key → xterm already sent it
         let composing = false;
+        // Dictation de-dup: iOS Dictation streams the WHOLE recognized text on each
+        // insertText ("A" → "ABC" → "ABC"), with no composition and no 229 keydown,
+        // and xterm re-sends each in full → it lands as "AABCABC". Track the last value
+        // so we can emit only the new suffix. A pause resets the session.
+        let lastData = '';
+        let lastInputAt = 0;
 
         // TEMP on-screen event log (?vvdebug / ?imelog) to characterize how iOS really
         // delivers Dictation vs CJK-keyboard input on a real device — they can't be
@@ -298,27 +304,61 @@ export class Xterm {
         reg('beforeinput', (e: Event) =>
             ev(`bi ${(e as InputEvent).inputType} d=${JSON.stringify((e as InputEvent).data)}`)
         );
-        reg('input', (e: Event) => {
-            const ie = e as InputEvent;
-            const dropped = imeKey && !keyPressed;
-            ev(
-                `in ${ie.inputType} d=${JSON.stringify(ie.data)} ic=${ie.isComposing} ` +
-                    `cm=${composing} drop=${dropped}`
-            );
-            imeKey = false;
-            if (composing || ie.isComposing || !dropped) return;
-            // Recover the single char the CJK keyboard drops (space/digit/punct, incl.
-            // full-width CJK punctuation, which is non-ASCII). length===1 keeps
-            // multi-char dictation words out; single-char dictation behavior is exactly
-            // what the ?imelog capture above is meant to reveal so we can fix it right.
-            const d = ie.data;
-            if (ie.inputType === 'insertText' && d && d.length === 1) {
-                ta.value = '';
-                if (this.inputHandler) this.inputHandler(d);
-                else this.sendData(d);
-                ev(`  -> SENT ${JSON.stringify(d)}`);
-            }
-        });
+        const send = (s: string) => {
+            if (this.inputHandler) this.inputHandler(s);
+            else this.sendData(s);
+        };
+        // input is handled on DOCUMENT in the CAPTURE phase, so we run BEFORE xterm's
+        // own textarea 'input' listener (which is on the textarea, later in the capture
+        // path). That lets us stopImmediatePropagation() to suppress xterm's full-data
+        // send once we've emitted the delta ourselves.
+        document.addEventListener(
+            'input',
+            (e: Event) => {
+                if (e.target !== ta) return;
+                const ie = e as InputEvent;
+                ev(
+                    `in ${ie.inputType} d=${JSON.stringify(ie.data)} ic=${ie.isComposing} ` +
+                        `cm=${composing} drop=${imeKey && !keyPressed}`
+                );
+
+                // ---- iOS Dictation: collapse the cumulative stream to its delta ----
+                if (ie.inputType === 'insertText' && !composing && !ie.isComposing) {
+                    const now = performance.now();
+                    if (now - lastInputAt > 1500) lastData = ''; // new session
+                    lastInputAt = now;
+                    const d = ie.data ?? '';
+                    if (lastData !== '' && d.startsWith(lastData)) {
+                        const delta = d.slice(lastData.length);
+                        lastData = d;
+                        imeKey = false;
+                        if (delta) {
+                            send(delta);
+                            ev(`  -> DELTA ${JSON.stringify(delta)}`);
+                        } else {
+                            ev('  -> DUP (suppressed)');
+                        }
+                        e.stopImmediatePropagation(); // block xterm's full re-send
+                        return;
+                    }
+                    lastData = d; // first segment / normal char → let xterm send it
+                }
+
+                // ---- CJK soft keyboard: recover the single char xterm drops ----
+                // A literal space/digit/punct arrives as 229 keydown + insertText with
+                // no keypress; xterm's _keyDownSeen guard then refuses it, so we resend.
+                const dropped = imeKey && !keyPressed;
+                imeKey = false;
+                if (composing || ie.isComposing || !dropped) return;
+                const d = ie.data;
+                if (ie.inputType === 'insertText' && d && d.length === 1) {
+                    ta.value = '';
+                    send(d);
+                    ev(`  -> SENT ${JSON.stringify(d)}`);
+                }
+            },
+            true
+        );
     }
 
     @bind
