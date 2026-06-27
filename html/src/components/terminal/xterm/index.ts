@@ -104,6 +104,7 @@ export class Xterm {
     private closeOnDisconnect = false;
     private reconnecting = false; // a visibility/online-triggered reconnect is in flight
     private reconnectKey?: IDisposable; // pending "Press ⏎ to Reconnect" key listener
+    private reconnectTimer = 0; // pending foreground auto-retry (gentle cadence)
 
     // pointer: coarse (touch) — computed once and reused; gates the mobile-only
     // paths (IME direct-input recovery, selection-clear) instead of re-running
@@ -382,6 +383,10 @@ export class Xterm {
         this.reconnecting = false;
         this.reconnectKey?.dispose();
         this.reconnectKey = undefined;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = 0;
+        }
         this.initListeners();
         // On touch devices don't auto-summon the soft keyboard on connect — let
         // the user tap the terminal (or the ⌨ toggle) when they want to type.
@@ -409,16 +414,24 @@ export class Xterm {
         } else if (this.closeOnDisconnect) {
             window.close();
         } else {
-            // Manual fallback for a close we won't auto-retry (avoids hammering a
-            // genuinely-down server). The common mobile case — backgrounded tab —
-            // is handled on return by reconnectNow via visibilitychange/online, not
-            // here, so it never loops. Enter still forces it.
+            // Manual fallback (Enter), plus auto-recovery: while the tab is
+            // foreground, retry on a gentle ~1.5s cadence — not a tight loop — so a
+            // dropped socket (server restart, brief blip, or a close that lands just
+            // after we foreground and the visibilitychange race missed) comes back
+            // on its own. A backgrounded tab schedules nothing and instead recovers
+            // on return via reconnectNow.
             const { terminal } = this;
             this.reconnectKey?.dispose();
             this.reconnectKey = terminal.onKey(e => {
                 if (e.domEvent.key === 'Enter') this.reconnectNow();
             });
             overlayAddon.showOverlay('Press ⏎ to Reconnect');
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible' && !this.reconnectTimer) {
+                this.reconnectTimer = window.setTimeout(() => {
+                    this.reconnectTimer = 0;
+                    this.reconnectNow();
+                }, 1500);
+            }
         }
     }
 
