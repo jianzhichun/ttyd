@@ -270,8 +270,14 @@ export class Xterm {
             const dropped = imeKey && !keyPressed;
             imeKey = false;
             if (composing || ie.isComposing || !dropped) return;
-            if (ie.inputType === 'insertText' && ie.data) {
-                const d = ie.data;
+            // Only recover the SINGLE ASCII char the CJK keyboard genuinely drops
+            // (space / digit / ASCII punctuation). The length-1 + ASCII guard is what
+            // keeps iOS Dictation out: dictation streams multi-char words and CJK text
+            // through insertText (often non-composing), and without this guard guardIme
+            // re-sent every chunk on top of xterm's own onData → duplicated, "very
+            // sensitive" repeated input. Multi-char / non-ASCII is left to xterm.
+            const d = ie.data;
+            if (ie.inputType === 'insertText' && d && d.length === 1 && d >= ' ' && d <= '~') {
                 ta.value = '';
                 if (this.inputHandler) this.inputHandler(d);
                 else this.sendData(d);
