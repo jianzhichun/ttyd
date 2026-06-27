@@ -710,12 +710,14 @@ export class Terminal extends Component<Props, State> {
             const dx = t.clientX - sx;
             const dy = t.clientY - sy;
             if (Math.abs(dx) + Math.abs(dy) > 10) return; // a drag, not a tap
-            // Let xterm's own synthesized-mouse handling deliver the tap: it focuses
-            // the hidden textarea (summons the iOS keyboard) and sends ONE mouse
-            // click to the app. We deliberately do NOT also send our own click —
-            // two clicks at the same cell read as a double-click and tmux runs
-            // select-word + copy ("copied N chars to tmux buffer"). Just the ripple.
+            // Confirmed tap → drive it ourselves (xterm's synthesized-mouse handling
+            // is suppressed below, else it focuses on every touch-START and pops the
+            // keyboard the moment you begin a scroll). Always send ONE click + ripple;
+            // summon the keyboard ONLY when the tap lands in Claude Code's input box
+            // (the rows around the cursor) — tapping output / clickable UI must not.
+            this.sendClick(t.clientX, t.clientY);
             this.tapRipple(t.clientX, t.clientY);
+            if (this.inInputZone(t.clientY)) window.term?.focus();
         };
         // Suppress the browser's own long-press callout/context menu on the canvas.
         const onCtx = (e: Event) => e.preventDefault();
@@ -724,6 +726,18 @@ export class Terminal extends Component<Props, State> {
         el.addEventListener('touchmove', onMove, { passive: true });
         el.addEventListener('touchend', onEnd, { passive: true });
         el.addEventListener('contextmenu', onCtx);
+        // Swallow the browser's synthesized mouse events from touches: xterm would
+        // otherwise focus the textarea on the touch-START mousedown — popping the
+        // keyboard the moment you begin a scroll — and double-report the click. We
+        // drive taps ourselves in onEnd. preventDefault also stops the trailing
+        // synthesized click from blurring a textarea we just focused (which iOS
+        // would treat as dismissing the keyboard again).
+        const swallowMouse = (ev: Event) => {
+            ev.stopPropagation();
+            if (ev.cancelable) ev.preventDefault();
+        };
+        const mouseTypes = ['mousedown', 'mousemove', 'mouseup', 'click', 'dblclick'];
+        mouseTypes.forEach(type => el.addEventListener(type, swallowMouse, true));
         this.disposeTap = () => {
             cancelLP();
             stopMomentum();
@@ -732,6 +746,7 @@ export class Terminal extends Component<Props, State> {
             el.removeEventListener('touchmove', onMove);
             el.removeEventListener('touchend', onEnd);
             el.removeEventListener('contextmenu', onCtx);
+            mouseTypes.forEach(type => el.removeEventListener(type, swallowMouse, true));
         };
     }
 
@@ -882,6 +897,37 @@ export class Terminal extends Component<Props, State> {
         if (!h) return;
         h.classList.add('fired'); // brief white-teal burst on the switch
         window.setTimeout(() => h.classList.remove('fired'), 220);
+    }
+
+    // Is this tap on Claude Code's input box? The cursor lives in that box, so the
+    // box spans roughly the cursor row and the border just above it down to the
+    // bottom. Only taps there should summon the keyboard; tapping output / clickable
+    // UI must not. Returns false when the cursor is scrolled off-screen (history).
+    private inInputZone(clientY: number): boolean {
+        const term = window.term;
+        const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
+        if (!term || !screen) return false;
+        const rect = screen.getBoundingClientRect();
+        if (rect.height <= 0) return false;
+        const buf = term.buffer.active;
+        const cursorVRow = buf.baseY + buf.cursorY - buf.viewportY; // 0-based viewport row
+        if (cursorVRow < 0 || cursorVRow >= term.rows) return false; // cursor off-screen
+        const tappedRow = Math.floor((clientY - rect.top) / (rect.height / term.rows));
+        return tappedRow >= cursorVRow - 1; // box top border sits one row above the cursor
+    }
+
+    // Translate a viewport tap into a terminal cell and emit an SGR left-click
+    // (press + release). getBoundingClientRect is transform-aware, so this stays
+    // correct even when the root is translated up over the floating keyboard.
+    private sendClick(clientX: number, clientY: number) {
+        const term = window.term;
+        const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
+        if (!term || !screen) return;
+        const rect = screen.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        const col = Math.min(Math.max(Math.floor((clientX - rect.left) / (rect.width / term.cols)) + 1, 1), term.cols);
+        const row = Math.min(Math.max(Math.floor((clientY - rect.top) / (rect.height / term.rows)) + 1, 1), term.rows);
+        this.xterm.sendData(`\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`);
     }
 
     // Brief teal ripple at the tap point — mobile feedback that a tap landed and
