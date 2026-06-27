@@ -594,6 +594,19 @@ export class Terminal extends Component<Props, State> {
         };
     }
 
+    // Horizontal-swipe window switch. Goes through the same-origin __ccswitch
+    // sidecar (a real `tmux next/previous-window`) instead of injecting `C-b n`/
+    // `C-b p` — the WebSocket can split that 2-byte sequence so tmux misses the
+    // prefix and the bare n/p leaks into Claude Code's input box.
+    @bind
+    private switchWindow(dir: 'next' | 'prev') {
+        fetch(new URL('__ccswitch', window.location.href).href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dir }),
+        }).catch(() => {});
+    }
+
     // Touch input forwarded to tmux (mouse on), since xterm doesn't forward touch:
     //  - a tap  -> SGR left-click at the cell: selects the pane, or switches
     //    window when you tap a window name in the bottom status bar.
@@ -721,7 +734,7 @@ export class Terminal extends Component<Props, State> {
                 scrolled = true; // not a tap
                 this.showSwipe(dx < 0, Math.min(1, Math.abs(dx) / THRESH_T));
                 if (!swiped && Math.abs(dx) >= THRESH_T) {
-                    this.xterm.sendData(dx < 0 ? '\x02n' : '\x02p'); // left -> next, right -> prev
+                    this.switchWindow(dx < 0 ? 'next' : 'prev'); // left -> next, right -> prev
                     this.fireSwipe();
                     swiped = true;
                 }
