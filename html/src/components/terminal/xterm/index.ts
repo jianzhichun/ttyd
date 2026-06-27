@@ -9,6 +9,7 @@ import { registerWrappedWebLinks } from './addons/wraplinks';
 import { ImageAddon } from '@xterm/addon-image';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { OverlayAddon } from './addons/overlay';
+import { TimestampAddon } from './addons/timestamps';
 import { ZmodemAddon } from './addons/zmodem';
 
 import '@xterm/xterm/css/xterm.css';
@@ -86,6 +87,7 @@ export class Xterm {
     private terminal: Terminal;
     private fitAddon = new FitAddon();
     private overlayAddon = new OverlayAddon();
+    private timestampAddon = new TimestampAddon();
     private clipboardAddon = new ClipboardAddon();
     private webglAddon?: WebglAddon;
     private canvasAddon?: CanvasAddon;
@@ -167,6 +169,7 @@ export class Xterm {
         terminal.loadAddon(fitAddon);
         terminal.loadAddon(overlayAddon);
         terminal.loadAddon(clipboardAddon);
+        terminal.loadAddon(this.timestampAddon);
 
         terminal.open(parent);
         this.register(registerWrappedWebLinks(terminal));
