@@ -520,7 +520,13 @@ export class Xterm {
             disposeCanvasRenderer();
             try {
                 this.webglAddon.onContextLoss(() => {
-                    this.webglAddon?.dispose();
+                    // The GPU context can be dropped out from under us — iOS Safari
+                    // does it when the tab is backgrounded (e.g. switching apps to
+                    // grab a screenshot/file before a Ctrl+V upload) or under memory
+                    // pressure. Disposing WebGL with no replacement leaves NO
+                    // renderer and blanks the whole terminal. Fall back to the
+                    // canvas renderer so it keeps drawing.
+                    enableCanvasRenderer();
                 });
                 terminal.loadAddon(this.webglAddon);
                 console.log('[ttyd] WebGL renderer loaded');
