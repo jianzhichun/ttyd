@@ -245,10 +245,12 @@ export class Xterm {
         let composing = false;
         // Dictation de-dup: iOS Dictation streams the WHOLE recognized text on each
         // insertText ("A" → "ABC" → "ABC"), with no composition and no 229 keydown,
-        // and xterm re-sends each in full → it lands as "AABCABC". Track the last value
-        // so we can emit only the new suffix. A pause resets the session.
+        // and xterm re-sends each in full → "AABCABC". Track the cumulative value and
+        // emit only the new suffix; the FINAL confirmation chunk (identical text, often
+        // >1s after the last partial) then collapses to an empty delta and is dropped.
+        // No timer: lastData resets naturally whenever an insertText does NOT extend it
+        // (a genuinely new/normal input never starts with the old cumulative text).
         let lastData = '';
-        let lastInputAt = 0;
 
         // TEMP on-screen event log (?vvdebug / ?imelog) to characterize how iOS really
         // delivers Dictation vs CJK-keyboard input on a real device — they can't be
@@ -324,9 +326,6 @@ export class Xterm {
 
                 // ---- iOS Dictation: collapse the cumulative stream to its delta ----
                 if (ie.inputType === 'insertText' && !composing && !ie.isComposing) {
-                    const now = performance.now();
-                    if (now - lastInputAt > 1500) lastData = ''; // new session
-                    lastInputAt = now;
                     const d = ie.data ?? '';
                     if (lastData !== '' && d.startsWith(lastData)) {
                         const delta = d.slice(lastData.length);
