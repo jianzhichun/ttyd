@@ -579,11 +579,58 @@ export class Terminal extends Component<Props, State> {
             if (!wheelRaf) wheelRaf = window.requestAnimationFrame(flushWheel);
         };
 
+        // ---- flick momentum (iOS-style inertia) ---------------------------------
+        // Sample the finger's vertical velocity while scrolling; on release, keep
+        // emitting wheel notches with exponentially-decaying speed so a flick coasts
+        // instead of stopping dead. A fresh touch cancels the coast.
+        let vY = 0; // smoothed finger velocity, px/ms (+ = moving down = into history)
+        let prevY = 0;
+        let prevT = 0;
+        let momRaf = 0;
+        let momV = 0; // current coast velocity, px/ms
+        let momAccum = 0; // px accumulated toward the next notch
+        let momT = 0;
+        const FRICTION = 0.95; // velocity retained per ~16ms frame
+        const V_FLICK = 0.25; // px/ms — minimum release speed to start coasting
+        const V_STOP = 0.04; // px/ms — coast ends below this
+        const momStep = (now: number) => {
+            const dt = now - momT || 16;
+            momT = now;
+            momV *= Math.pow(FRICTION, dt / 16);
+            if (Math.abs(momV) < V_STOP) {
+                momRaf = 0;
+                return;
+            }
+            momAccum += momV * dt;
+            let n = 0;
+            while (momAccum >= STEP) {
+                n++;
+                momAccum -= STEP;
+            }
+            while (momAccum <= -STEP) {
+                n--;
+                momAccum += STEP;
+            }
+            if (n !== 0) this.xterm.sendData(`\x1b[<${n > 0 ? 64 : 65};2;2M`.repeat(Math.abs(n)));
+            momRaf = window.requestAnimationFrame(momStep);
+        };
+        const stopMomentum = () => {
+            if (momRaf) {
+                cancelAnimationFrame(momRaf);
+                momRaf = 0;
+            }
+            momV = 0;
+        };
+
         const onStart = (e: TouchEvent) => {
+            stopMomentum(); // a new touch halts any coasting
             single = e.touches.length === 1;
             sx = e.touches[0].clientX;
             sy = e.touches[0].clientY;
             lastY = sy;
+            prevY = sy;
+            prevT = performance.now();
+            vY = 0;
             scrolled = false;
             swiped = false;
             longPressed = false;
@@ -618,6 +665,14 @@ export class Terminal extends Component<Props, State> {
                 }
                 return;
             }
+            // sample vertical velocity (smoothed) for release momentum
+            const now = performance.now();
+            const mdt = now - prevT;
+            if (mdt > 0) {
+                vY = vY * 0.7 + ((y - prevY) / mdt) * 0.3;
+                prevY = y;
+                prevT = now;
+            }
             while (y - lastY >= STEP) {
                 queueWheel(true); // finger down -> wheel up -> into history
                 lastY += STEP;
@@ -640,7 +695,17 @@ export class Terminal extends Component<Props, State> {
                 swiped = false;
                 return; // horizontal swipe already handled during the move
             }
-            if (!single || scrolled || e.changedTouches.length !== 1) return;
+            if (scrolled) {
+                // released after a vertical drag — coast if it was a flick
+                if (Math.abs(vY) > V_FLICK) {
+                    momV = vY;
+                    momAccum = 0;
+                    momT = performance.now();
+                    if (!momRaf) momRaf = window.requestAnimationFrame(momStep);
+                }
+                return;
+            }
+            if (!single || e.changedTouches.length !== 1) return;
             const t = e.changedTouches[0];
             const dx = t.clientX - sx;
             const dy = t.clientY - sy;
@@ -661,6 +726,7 @@ export class Terminal extends Component<Props, State> {
         el.addEventListener('contextmenu', onCtx);
         this.disposeTap = () => {
             cancelLP();
+            stopMomentum();
             if (wheelRaf) cancelAnimationFrame(wheelRaf);
             el.removeEventListener('touchstart', onStart);
             el.removeEventListener('touchmove', onMove);
