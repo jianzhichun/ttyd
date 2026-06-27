@@ -25,7 +25,7 @@ const CSS = `
 export class TimestampAddon implements ITerminalAddon {
     private terminal?: Terminal;
     private disposables: IDisposable[] = [];
-    private times = new Map<number, number>(); // absolute buffer line -> epoch ms
+    private times: (number | undefined)[] = []; // viewport row index -> epoch ms
     private gutter?: HTMLDivElement;
     private rowEls: HTMLDivElement[] = [];
     private toggleBtn?: HTMLButtonElement;
@@ -36,12 +36,29 @@ export class TimestampAddon implements ITerminalAddon {
         // Attach the stamp hooks immediately. activate() runs at loadAddon time,
         // before terminal.open() and before any data is written, so the very
         // first lines of a session are stamped too (no cold-start gap).
-        const stamp = () => {
-            const b = terminal.buffer.active;
-            this.times.set(b.baseY + b.cursorY, Date.now());
-        };
-        this.disposables.push(terminal.onWriteParsed(stamp));
-        this.disposables.push(terminal.onLineFeed(stamp));
+        // Times are tracked per viewport row: the live terminal runs tmux with
+        // scrollback=0, so the xterm buffer is a fixed rows-high window. When a
+        // newline scrolls the screen, shift the time column up by one so each
+        // time stays aligned with the content that moved with it.
+        this.disposables.push(
+            terminal.onLineFeed(() => {
+                const b = terminal.buffer.active;
+                const last = terminal.rows - 1;
+                if (b.cursorY >= last) {
+                    this.times[last] = Date.now(); // bottom line just completed
+                    this.times.shift(); // …and scrolled up
+                    this.times[last] = undefined; // fresh empty bottom row
+                } else {
+                    this.times[Math.max(0, b.cursorY - 1)] = Date.now();
+                }
+            })
+        );
+        this.disposables.push(
+            terminal.onWriteParsed(() => {
+                const b = terminal.buffer.active;
+                this.times[b.cursorY] = Date.now(); // in-place updates (spinner, input box)
+            })
+        );
         this.disposables.push(terminal.onRender(() => this.paint()));
         this.disposables.push(terminal.onScroll(() => this.paint()));
     }
@@ -112,9 +129,8 @@ export class TimestampAddon implements ITerminalAddon {
             const extra = this.rowEls.pop();
             extra?.remove();
         }
-        const top = term.buffer.active.viewportY;
         for (let i = 0; i < rows; i++) {
-            const t = this.times.get(top + i);
+            const t = this.times[i];
             const span = this.rowEls[i].firstChild as HTMLElement;
             span.textContent = t ? this.fmt(t) : '';
         }
