@@ -17,7 +17,7 @@ const CSS = `
 .xterm:not(.ts-on) .ts-gutter{display:none}
 .ts-row{flex:1 1 0;display:flex;align-items:center;justify-content:flex-end}
 .ts-row span:empty{display:none}
-.ts-row span{padding:0 4px;border-radius:3px;white-space:nowrap;background:rgba(0,0,0,.55);color:rgba(255,255,255,.72)}
+.ts-row span{padding:0 4px;border-radius:3px;white-space:nowrap;background:rgba(0,0,0,.38);color:rgba(255,255,255,.5)}
 .ts-toggle{position:fixed;right:10px;bottom:10px;z-index:30;width:30px;height:30px;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:rgba(40,40,40,.8);color:#ddd;font-size:14px;line-height:1}
 .ts-toggle.active{border-color:#d8a657;color:#d8a657}
 `;
@@ -129,10 +129,26 @@ export class TimestampAddon implements ITerminalAddon {
             const extra = this.rowEls.pop();
             extra?.remove();
         }
+        // Declutter. A TUI like Claude Code repaints whole regions, and tmux
+        // repaints the entire screen on connect/resize — that would stamp every
+        // row with the same instant, i.e. a solid column of identical times on
+        // every line. So: (1) never stamp a blank row, and (2) within a run of
+        // rows sharing the same second, show the time only on the first. The
+        // result is a sparse column that only marks where the time changes.
+        const buf = term.buffer.active;
+        let prev = '';
         for (let i = 0; i < rows; i++) {
-            const t = this.times[i];
             const span = this.rowEls[i].firstChild as HTMLElement;
-            span.textContent = t ? this.fmt(t) : '';
+            const t = this.times[i];
+            const line = buf.getLine(buf.viewportY + i);
+            const blank = !line || line.translateToString(true).trim() === '';
+            if (blank || !t) {
+                span.textContent = '';
+                continue;
+            }
+            const label = this.fmt(t);
+            span.textContent = label === prev ? '' : label;
+            prev = label;
         }
     }
 }
