@@ -36,6 +36,7 @@ export class TimestampAddon implements ITerminalAddon {
     private gutter?: HTMLDivElement;
     private rowEls: HTMLDivElement[] = [];
     private rowLabels: string[] = []; // last text painted per row → skip no-op DOM writes
+    private rawScratch: string[] = []; // reused per-row time-string buffer (paint pass 1)
     private pollId?: number;
     private rafId = 0; // coalesces render/scroll bursts to one paint per frame
 
@@ -76,11 +77,26 @@ export class TimestampAddon implements ITerminalAddon {
             if (!r.ok) return;
             const data = await r.json();
             if (Array.isArray(data?.ts)) {
-                this.times = data.ts as (number | undefined)[];
+                this.mergeTimes(data.ts as (number | undefined)[]);
                 this.schedule();
             }
         } catch {
             /* transient — keep the previous times */
+        }
+    }
+
+    // Merge server times into our per-row array. A live TUI repaints constantly,
+    // which momentarily resets a row's settle-time to null; replacing outright
+    // would flash the gutter empty. So keep the last known time per row and only
+    // overwrite with a fresh non-null value — UNLESS the row count changed (a
+    // resize: positions no longer line up, so take the new array verbatim).
+    private mergeTimes(next: (number | undefined)[]): void {
+        if (next.length !== this.times.length) {
+            this.times = next.slice();
+            return;
+        }
+        for (let i = 0; i < next.length; i++) {
+            if (next[i] != null) this.times[i] = next[i];
         }
     }
 
@@ -155,24 +171,26 @@ export class TimestampAddon implements ITerminalAddon {
 
         // Display: server time per row (top-aligned); skip the no-stamp zone and
         // blank rows, and collapse a run of rows sharing the same label to one.
-        let prev = '';
+        // Pass 1: each row's raw time string ('' when nothing stamps there). The
+        // cheap rejects (input-box zone / no server time) gate the costly
+        // translateToString so timeless rows never pay for it.
+        const raw = this.rawScratch;
+        raw.length = rows;
         for (let i = 0; i < rows; i++) {
-            // What this row should show ('' = nothing). Cheap rejects FIRST — only
-            // build the row text (translateToString) for a row that actually has a
-            // server time and sits in the stamp zone; the input box / timeless rows
-            // never pay for it.
-            let want = '';
+            let s = '';
             const t = this.times[i];
             if (i < liveTop && t) {
                 const line = buf.getLine(buf.viewportY + i);
-                if (line && line.translateToString(true).trim() !== '') {
-                    const label = this.fmt(t);
-                    want = label === prev ? '' : label; // collapse a run of equal times
-                    prev = label;
-                }
+                if (line && line.translateToString(true).trim() !== '') s = this.fmt(t);
             }
-            // Skip the DOM entirely when this row's content is unchanged — during
-            // scroll/typing most rows are identical frame to frame.
+            raw[i] = s;
+        }
+        // Pass 2: stamp each block's time on its BOTTOM row (a block = a run of rows
+        // sharing one time). With the right-aligned gutter that reads as the
+        // bottom-right corner of the output block. Unchanged rows skip the DOM.
+        for (let i = 0; i < rows; i++) {
+            const s = raw[i];
+            const want = s && (i === rows - 1 || raw[i + 1] !== s) ? s : '';
             if (this.rowLabels[i] === want) continue;
             this.rowLabels[i] = want;
             const span = this.rowEls[i].firstChild as HTMLElement;
