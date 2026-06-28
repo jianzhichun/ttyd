@@ -501,6 +501,7 @@ export class Terminal extends Component<Props, State> {
 
         let curKbT = 0; // current keybar translateY (px) — incremental measure + no-op skip
         let lastLift = -1;
+        let screenEl: HTMLElement | null = null; // cached .xterm-screen (page-lifetime)
         const apply = () => {
             const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
             this.kbShown = kb > 1; // soft keyboard is up iff the visual viewport shrank
@@ -541,8 +542,20 @@ export class Terminal extends Component<Props, State> {
                     `tgt=${Math.round(vv.offsetTop + vv.height)}`;
             }
             const term = window.term;
-            const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
-            if (kb <= 1 || !term || !screen || !keybar) {
+            // Keyboard down (the common case) needs none of the screen geometry below,
+            // so bail BEFORE touching the DOM — avoids a querySelector on every
+            // cursor-move frame while you're just typing with no keyboard lift in play.
+            if (kb <= 1 || !term || !keybar) {
+                if (lastLift !== 0) {
+                    this.container.style.transform = '';
+                    lastLift = 0;
+                }
+                return;
+            }
+            // screen element is page-lifetime → query once, reuse across calls.
+            if (!screenEl) screenEl = this.container.querySelector('.xterm-screen') as HTMLElement | null;
+            const screen = screenEl;
+            if (!screen) {
                 if (lastLift !== 0) {
                     this.container.style.transform = '';
                     lastLift = 0;

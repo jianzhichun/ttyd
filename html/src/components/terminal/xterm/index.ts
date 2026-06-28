@@ -120,7 +120,10 @@ export class Xterm {
     // straight to sendData.
     public inputHandler?: (data: string) => void;
 
-    private writeFunc = (data: ArrayBuffer) => this.writeData(new Uint8Array(data));
+    // onSocketData passes a zero-copy Uint8Array view of the OUTPUT payload; forward it
+    // straight to the terminal (no copy). The zmodem path (applyPreferences) rebuilds an
+    // ArrayBuffer from the view because the sentry needs one.
+    private writeFunc = (data: Uint8Array) => this.writeData(data);
 
     constructor(
         private options: XtermOptions,
@@ -679,7 +682,10 @@ export class Xterm {
         const { textDecoder } = this;
         const rawData = event.data as ArrayBuffer;
         const cmd = String.fromCharCode(new Uint8Array(rawData)[0]);
-        const data = rawData.slice(1);
+        // Zero-copy view over the payload (everything after the 1-byte command). The hot
+        // OUTPUT path forwards this straight to the terminal, dropping the per-message
+        // rawData.slice(1) copy; textDecoder.decode() accepts the view just as well.
+        const data = new Uint8Array(rawData, 1);
 
         switch (cmd) {
             case Command.OUTPUT:
@@ -715,7 +721,8 @@ export class Xterm {
                 sender: this.sendData,
                 writer: this.writeData,
             });
-            this.writeFunc = data => this.zmodemAddon?.consume(data);
+            this.writeFunc = data =>
+                this.zmodemAddon?.consume(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
             terminal.loadAddon(register(this.zmodemAddon));
         }
 

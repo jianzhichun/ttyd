@@ -24,6 +24,9 @@ const POLL_MS = 800; // how often to refresh the per-row times from the server
 // per this window — blocks within MERGE_MS of the last shown stamp collapse into
 // it. Keeps the gutter readable instead of one stamp per output block.
 const MERGE_MS = 5 * 60 * 1000;
+// Cap render-driven gutter repaints to this cadence. onRender fires ~every frame while
+// output streams, but the stamps are second-resolution, so 60fps repaints are wasted.
+const THROTTLE_MS = 150;
 
 const CSS = `
 .ts-gutter{position:absolute;top:0;right:0;bottom:0;display:flex;flex-direction:column;pointer-events:none;z-index:9;font:11px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace}
@@ -46,22 +49,53 @@ export class TimestampAddon implements ITerminalAddon {
     private msScratch: number[] = []; // reused per-row settle-ms buffer (0 = no stamp; paint pass 1)
     private pollId?: number;
     private rafId = 0; // coalesces render/scroll bursts to one paint per frame
+    private throttleId = 0; // pending throttled (render-driven) paint
+    private lastPaint = 0; // performance.now() of the last paint, for throttling
+    private fetching = false; // a __cctimes fetch is in flight (drop overlapping polls)
 
     public activate(terminal: Terminal): void {
         this.terminal = terminal;
         this.injectStyle();
+        // onRender fires every frame while output streams → throttle those repaints. A
+        // scroll moved the rows, so it must repaint promptly → bypass the throttle.
         this.disposables.push(terminal.onRender(() => this.schedule()));
-        this.disposables.push(terminal.onScroll(() => this.schedule()));
+        this.disposables.push(terminal.onScroll(() => this.schedule(true)));
         this.fetchTimes();
         this.pollId = window.setInterval(() => this.fetchTimes(), POLL_MS);
     }
 
-    // Coalesce a burst of render/scroll events into a single paint on the next
-    // animation frame — the gutter never needs to repaint more than once a frame.
-    private schedule(): void {
+    // Coalesce render/scroll bursts into a single paint. A scroll repaints on the next
+    // frame (rows moved, needs to look prompt). A render is throttled: while Claude Code
+    // streams, onRender fires every frame, but the gutter shows only second-resolution
+    // stamps merged into 5-min windows — repainting (re-running translateToString on
+    // every row) 60×/s is pure waste, so cap render-driven paints to once per
+    // THROTTLE_MS. ~90% fewer paints/allocations during streaming, stamps look identical.
+    private schedule(immediate = false): void {
+        if (immediate) {
+            if (this.throttleId) {
+                window.clearTimeout(this.throttleId);
+                this.throttleId = 0;
+            }
+            this.scheduleRaf();
+            return;
+        }
+        if (this.rafId || this.throttleId) return;
+        const since = performance.now() - this.lastPaint;
+        if (since >= THROTTLE_MS) {
+            this.scheduleRaf();
+        } else {
+            this.throttleId = window.setTimeout(() => {
+                this.throttleId = 0;
+                this.scheduleRaf();
+            }, THROTTLE_MS - since);
+        }
+    }
+
+    private scheduleRaf(): void {
         if (this.rafId) return;
         this.rafId = requestAnimationFrame(() => {
             this.rafId = 0;
+            this.lastPaint = performance.now();
             this.paint();
         });
     }
@@ -71,6 +105,7 @@ export class TimestampAddon implements ITerminalAddon {
         this.disposables = [];
         if (this.pollId) window.clearInterval(this.pollId);
         if (this.rafId) cancelAnimationFrame(this.rafId);
+        if (this.throttleId) window.clearTimeout(this.throttleId);
         this.gutter?.remove();
         document.getElementById(STYLE_ID)?.remove();
     }
@@ -82,6 +117,13 @@ export class TimestampAddon implements ITerminalAddon {
     // and only re-sent when its generation changes (the gen round-trips here).
     // On any failure keep the last-known data rather than blanking the gutter.
     private async fetchTimes(): Promise<void> {
+        // Don't poll a backgrounded tab (phone locked / app switched) — nothing is
+        // visible and the stamps are re-fetched on return. NOT gated on socket state:
+        // __cctimes is decoupled from the WebSocket, so its data stays valid (and worth
+        // refreshing) even mid-reconnect.
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        if (this.fetching) return; // a previous poll is still in flight — skip this tick
+        this.fetching = true;
         try {
             const buf = this.terminal?.buffer.active;
             const scrolled = buf ? buf.viewportY < buf.baseY : false;
@@ -109,6 +151,8 @@ export class TimestampAddon implements ITerminalAddon {
             this.schedule();
         } catch {
             /* transient — keep the previous times */
+        } finally {
+            this.fetching = false;
         }
     }
 
