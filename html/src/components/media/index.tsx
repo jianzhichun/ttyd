@@ -84,18 +84,36 @@ export class MediaTray extends Component<unknown, State> {
 
                 {open && (
                     <div class="mt-panel">
-                        <div class="mt-head">media · notes — {items.length}</div>
+                        <div class="mt-head">links — {items.length}</div>
                         <div class="mt-list">
-                            {items.map(it => (
-                                <button key={it.url} class="mt-item" type="button" onClick={() => this.show(it)}>
-                                    {it.kind === 'image' ? (
-                                        <img class="mt-thumb" src={it.url} loading="lazy" alt="" />
-                                    ) : (
-                                        <span class="mt-thumb mt-type">{typeLabel(it)}</span>
-                                    )}
-                                    <span class="mt-name">{it.name}</span>
-                                </button>
-                            ))}
+                            {items.map(it =>
+                                it.kind === 'link' ? (
+                                    // Non-previewable link → open in a new tab via a real
+                                    // anchor. A tap on <a> is a trusted user gesture, so
+                                    // mobile does not popup-block it (unlike window.open).
+                                    <a
+                                        key={it.url}
+                                        class="mt-item mt-link"
+                                        href={it.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        <span class="mt-thumb mt-type">↗</span>
+                                        <span class="mt-name">
+                                            {it.host} · {it.name}
+                                        </span>
+                                    </a>
+                                ) : (
+                                    <button key={it.url} class="mt-item" type="button" onClick={() => this.show(it)}>
+                                        {it.kind === 'image' ? (
+                                            <img class="mt-thumb" src={it.url} loading="lazy" alt="" />
+                                        ) : (
+                                            <span class="mt-thumb mt-type">{typeLabel(it)}</span>
+                                        )}
+                                        <span class="mt-name">{it.name}</span>
+                                    </button>
+                                )
+                            )}
                         </div>
                     </div>
                 )}
@@ -146,5 +164,7 @@ function renderPreview(it: MediaItem) {
             return <PdfView url={it.url} />;
         case 'note':
             return <iframe class="mt-frame" src={it.url} title={it.name} />;
+        default:
+            return null; // 'link' items open in a new tab, never preview
     }
 }

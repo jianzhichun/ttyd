@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types media.test.mjs
 import assert from 'node:assert/strict';
-import { classifyMedia, MediaStore } from './media.ts';
+import { classifyMedia, classifyUrl, MediaStore } from './media.ts';
 import { scanBufferUrls } from '../terminal/xterm/addons/wraplinks.ts';
 
 let passed = 0;
@@ -34,26 +34,48 @@ function check(name, cond) {
     check('trailing slash tolerated', ts && ts.kind === 'image' && ts.name === 'pic.gif');
 }
 
+// ---- classifyUrl (every http(s) URL enters the tray) -----------------------
+{
+    // previewable ones keep their media/notes kind
+    check('url: media -> image', classifyUrl('https://media.internal/a/foo.png')?.kind === 'image');
+    check('url: notes -> note', classifyUrl('https://notes.internal/a/x.md')?.kind === 'note');
+
+    // everything else http(s) becomes an openable link (NOT null)
+    const office = classifyUrl('https://office.internal/files/x.docx');
+    check('url: office -> link', office && office.kind === 'link' && office.host === 'office.internal');
+    const code = classifyUrl('https://code.internal/?folder=/home/dev');
+    check('url: code -> link', code && code.kind === 'link' && code.host === 'code.internal');
+    const art = classifyUrl('https://claude.ai/code/artifact/abc123');
+    check('url: external -> link', art && art.kind === 'link' && art.host === 'claude.ai' && art.name === 'abc123');
+
+    // non-http(s) and garbage still rejected
+    check('url: mailto rejected', classifyUrl('mailto:a@b.com') === null);
+    check('url: garbage rejected', classifyUrl('not a url') === null);
+}
+
 // ---- MediaStore.setUrls (live current-screen view) -------------------------
 {
     const s = new MediaStore();
     s.setUrls(['https://media.internal/a/foo.png']);
     check('setUrls collects a media link', s.getItems().length === 1 && s.getItems()[0].kind === 'image');
 
-    // replace: only media/notes kept, in screen order
+    // replace: ALL http(s) links kept now, in screen order (office → link)
     s.setUrls([
         'https://office.internal/x.docx',
         'https://media.internal/a/b.png',
         'https://notes.internal/c.md',
     ]);
     check(
-        'setUrls filters + preserves order',
-        s.getItems().length === 2 && s.getItems()[0].kind === 'image' && s.getItems()[1].kind === 'note'
+        'setUrls keeps every link + preserves order',
+        s.getItems().length === 3 &&
+            s.getItems()[0].kind === 'link' &&
+            s.getItems()[1].kind === 'image' &&
+            s.getItems()[2].kind === 'note'
     );
 
-    // replace with all-non-media empties (it tracks the current screen, no history)
+    // an external link alone is still kept (openable), not dropped
     s.setUrls(['https://office.internal/x.docx']);
-    check('setUrls keeps only current media', s.getItems().length === 0);
+    check('setUrls keeps a lone external link', s.getItems().length === 1 && s.getItems()[0].kind === 'link');
 }
 
 {

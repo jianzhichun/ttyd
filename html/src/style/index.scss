@@ -291,6 +291,11 @@ body {
     color: #d2d2d2;
     text-align: left;
     cursor: pointer;
+    text-decoration: none; // anchor link items match the button items
+    box-sizing: border-box;
+}
+.mt-link .mt-type {
+    color: #7fc7ff; // external-link chip reads as a link
 }
 .mt-item:active {
     background: #333;

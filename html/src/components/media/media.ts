@@ -5,18 +5,23 @@
 // rendered buffer (wraplinks.scanBufferUrls, which stitches hard-wrapped URLs)
 // and handed to addUrls(); the view layer subscribes.
 //
-// Only the two read-only renderer hosts qualify (see the homevm CLAUDE.md
-// file-link rules): media.internal (images/video/audio/pdf, Range-streamed) and
-// notes.internal (.md rendered to HTML with KaTeX/Mermaid). office.internal
-// (editor), code.internal (VS Code) and external hosts are left to the normal
-// "open in a new tab" link behaviour and never enter the tray.
+// EVERY http(s) URL on screen enters the tray — because on touch devices the
+// inline xterm link is dead (setupTouch forwards a tap to tmux as a mouse click,
+// so the link provider's activate never fires), leaving the tray the only
+// reliable way to open a link on mobile. Two behaviours:
+//   - media.internal (images/video/audio/pdf, Range-streamed) and notes.internal
+//     (.md rendered with KaTeX/Mermaid) are PREVIEWABLE → tapped in-place.
+//   - everything else (office.internal, code.internal, external e.g. claude.ai)
+//     becomes a kind:'link' item the tray opens in a new tab via a real <a>
+//     (a trusted user gesture, so mobile does not popup-block it).
 
-export type MediaKind = 'image' | 'video' | 'audio' | 'pdf' | 'note';
+export type MediaKind = 'image' | 'video' | 'audio' | 'pdf' | 'note' | 'link';
 
 export interface MediaItem {
     url: string;
     kind: MediaKind;
     name: string; // last path segment, percent-decoded, for the tray label
+    host?: string; // hostname — labels non-previewable 'link' items
 }
 
 const HOSTS = new Set(['media.internal', 'notes.internal']);
@@ -77,6 +82,29 @@ export function classifyMedia(rawUrl: string): MediaItem | null {
     return { url: rawUrl, kind, name: name || u.hostname };
 }
 
+// Classify ANY http(s) URL into a tray item: previewable media/notes keep their
+// preview kind; every other http(s) URL becomes an openable kind:'link'. Returns
+// null only for non-http(s) or unparseable strings. Pure — unit-testable.
+export function classifyUrl(rawUrl: string): MediaItem | null {
+    const media = classifyMedia(rawUrl);
+    if (media) return media;
+    let u: URL;
+    try {
+        u = new URL(rawUrl);
+    } catch {
+        return null;
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    const seg = (u.pathname.replace(/\/+$/, '').split('/').pop() || '') + (u.search || '');
+    let name = seg;
+    try {
+        name = decodeURIComponent(seg);
+    } catch {
+        /* keep raw seg on malformed escapes */
+    }
+    return { url: rawUrl, kind: 'link', name: name || u.hostname, host: u.hostname };
+}
+
 // ── collection store ────────────────────────────────────────────────────────
 // Holds the media/notes links CURRENTLY on screen. Fed by MediaTray, which scans
 // the rendered buffer every render and replaces the list, so the tray tracks the
@@ -89,11 +117,12 @@ export class MediaStore {
     private items: MediaItem[] = [];
     private listeners = new Set<Listener>();
 
-    // Replace the list with the media/notes links currently on screen (screen
-    // order, top→bottom). Called on every render with the latest scan; emits only
-    // when the set actually changed, so it tracks the viewport live without churn.
+    // Replace the list with the links currently on screen (screen order,
+    // top→bottom): previewable media/notes plus openable external links. Called on
+    // every render with the latest scan; emits only when the set actually changed,
+    // so it tracks the viewport live without churn.
     setUrls(urls: string[]): void {
-        const items = urls.map(classifyMedia).filter((x): x is MediaItem => x !== null);
+        const items = urls.map(classifyUrl).filter((x): x is MediaItem => x !== null);
         if (items.length === this.items.length && items.every((it, i) => it.url === this.items[i].url)) {
             return;
         }
