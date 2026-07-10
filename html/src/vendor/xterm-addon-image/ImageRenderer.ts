@@ -129,12 +129,18 @@ export class ImageRenderer extends Disposable implements IDisposable {
   }
 
   /**
-   * Current cell size (float).
+   * Current cell size (float), in DEVICE pixels.
+   *
+   * The image layer is a device-resolution canvas (see `insertLayerToDom`), so all tile
+   * math must be in device px to align with the canvas/webgl text renderers, which round
+   * cell origins to the device-pixel grid. Using CSS px here (the upstream default) drifts
+   * from that grid on HiDPI (dpr>1, e.g. iOS at dpr 3): the right-edge text cells land a
+   * fraction of a cell past the CSS-scaled image, exposing the raw U+10EEEE glyph as tofu.
    */
   public get cellSize(): ICellSize {
     return {
-      width: this.dimensions?.css.cell.width || -1,
-      height: this.dimensions?.css.cell.height || -1
+      width: this.dimensions?.device.cell.width || -1,
+      height: this.dimensions?.device.cell.height || -1
     };
   }
 
@@ -144,9 +150,9 @@ export class ImageRenderer extends Disposable implements IDisposable {
   public clearLines(start: number, end: number): void {
     this._ctx?.clearRect(
       0,
-      start * (this.dimensions?.css.cell.height || 0),
-      this.dimensions?.css.canvas.width || 0,
-      (++end - start) * (this.dimensions?.css.cell.height || 0)
+      start * (this.dimensions?.device.cell.height || 0),
+      this.dimensions?.device.canvas.width || 0,
+      (++end - start) * (this.dimensions?.device.cell.height || 0)
     );
   }
 
@@ -183,6 +189,7 @@ export class ImageRenderer extends Disposable implements IDisposable {
     const img = imgSpec.actual!;
     // Kitty placeholders carry an explicit tile grid; prefer it over ceil(w/cellW),
     // which mis-counts when the rescaled pixel width isn't an exact cell multiple.
+    const isPh = !!(imgSpec as IPlaceholderImageSpec).gridCols;
     const cols = (imgSpec as IPlaceholderImageSpec).gridCols || Math.ceil(img.width / width);
 
     const sx = (tileId % cols) * width;
@@ -191,8 +198,17 @@ export class ImageRenderer extends Disposable implements IDisposable {
     const dy = row * height;
 
     // safari bug: never access image source out of bounds
-    const finalWidth = count * width + sx > img.width ? img.width - sx : count * width;
-    const finalHeight = sy + height > img.height ? img.height - sy : height;
+    const srcWidth = count * width + sx > img.width ? img.width - sx : count * width;
+    const srcHeight = sy + height > img.height ? img.height - sy : height;
+
+    // For placeholder specs the DESTINATION must always span the exact cell block
+    // (`count * width` × `height`): the rescaled bitmap can be a pixel short of the
+    // cell-multiple after ceil/floor, and clamping the dest to that (as the sixel/IIP
+    // path does) would leave the last cell's right/bottom sliver unpainted, exposing the
+    // raw U+10EEEE glyph. Stretching the near-exact source slice by <1px is invisible and
+    // guarantees full coverage. Sixel/IIP keep the 1:1 source=dest mapping.
+    const dstWidth = isPh ? count * width : srcWidth;
+    const dstHeight = isPh ? height : srcHeight;
 
     // Floor all pixel offsets to get stable tile mapping without any overflows.
     // Note: For not pixel perfect aligned cells like in the DOM renderer
@@ -200,8 +216,8 @@ export class ImageRenderer extends Disposable implements IDisposable {
     // FIX #34: avoid striping on displays with pixelDeviceRatio != 1 by ceiling height and width
     this._ctx.drawImage(
       img,
-      Math.floor(sx), Math.floor(sy), Math.ceil(finalWidth), Math.ceil(finalHeight),
-      Math.floor(dx), Math.floor(dy), Math.ceil(finalWidth), Math.ceil(finalHeight)
+      Math.floor(sx), Math.floor(sy), Math.ceil(srcWidth), Math.ceil(srcHeight),
+      Math.floor(dx), Math.floor(dy), Math.ceil(dstWidth), Math.ceil(dstHeight)
     );
   }
 
@@ -275,9 +291,13 @@ export class ImageRenderer extends Disposable implements IDisposable {
     if (!this.canvas) {
       return;
     }
-    if (this.canvas.width !== this.dimensions!.css.canvas.width || this.canvas.height !== this.dimensions!.css.canvas.height) {
-      this.canvas.width = this.dimensions!.css.canvas.width || 0;
-      this.canvas.height = this.dimensions!.css.canvas.height || 0;
+    // Backing store at DEVICE resolution (crisp on HiDPI + aligned to the text grid),
+    // displayed at CSS size via the style — exactly how xterm's own render layers work.
+    if (this.canvas.width !== this.dimensions!.device.canvas.width || this.canvas.height !== this.dimensions!.device.canvas.height) {
+      this.canvas.width = this.dimensions!.device.canvas.width || 0;
+      this.canvas.height = this.dimensions!.device.canvas.height || 0;
+      this.canvas.style.width = `${this.dimensions!.css.canvas.width || 0}px`;
+      this.canvas.style.height = `${this.dimensions!.css.canvas.height || 0}px`;
     }
   }
 
@@ -325,10 +345,13 @@ export class ImageRenderer extends Disposable implements IDisposable {
     // make sure that the terminal is attached to a document and to DOM
     if (this.document && this._terminal._core.screenElement) {
       if (!this.canvas) {
+        // Device-resolution backing store, CSS-sized for display (see rescaleCanvas).
         this.canvas = ImageRenderer.createCanvas(
-          this.document, this.dimensions?.css.canvas.width || 0,
-          this.dimensions?.css.canvas.height || 0
+          this.document, this.dimensions?.device.canvas.width || 0,
+          this.dimensions?.device.canvas.height || 0
         );
+        this.canvas.style.width = `${this.dimensions?.css.canvas.width || 0}px`;
+        this.canvas.style.height = `${this.dimensions?.css.canvas.height || 0}px`;
         this.canvas.classList.add('xterm-image-layer');
         this._terminal._core.screenElement.appendChild(this.canvas);
         this._ctx = this.canvas.getContext('2d', { alpha: true, desynchronized: true });

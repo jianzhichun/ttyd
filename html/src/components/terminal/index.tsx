@@ -6,8 +6,9 @@ import { Xterm, XtermOptions } from './xterm';
 import '@xterm/xterm/css/xterm.css';
 import { Modal } from '../modal';
 import { KeyBar, Mod } from '../keybar';
-import { MediaTray } from '../media';
 import { NotifyTray } from '../media/notify-tray';
+import { computeLinks, openLink } from './xterm/addons/wraplinks';
+import type { ILink } from '@xterm/xterm';
 
 interface Props extends XtermOptions {
     id: string;
@@ -210,7 +211,6 @@ export class Terminal extends Component<Props, State> {
                     style="display:none"
                     onChange={this.onFilePicked}
                 />
-                <MediaTray key="media-tray" />
                 <NotifyTray key="notify-tray" />
             </div>
         );
@@ -805,6 +805,15 @@ export class Terminal extends Component<Props, State> {
             const dx = t.clientX - sx;
             const dy = t.clientY - sy;
             if (Math.abs(dx) + Math.abs(dy) > 10) return; // a drag, not a tap
+            // A tap that lands on a link opens it (mobile has no other way — the click that
+            // would fire xterm's own link activation is swallowed), and does NOT also send a
+            // tmux click, so tapping a link never moves the pane selection under it.
+            const link = this.linkAt(t.clientX, t.clientY);
+            if (link) {
+                openLink(e as unknown as MouseEvent, link.text);
+                this.tapRipple(t.clientX, t.clientY);
+                return;
+            }
             // Confirmed tap → drive it ourselves (xterm's synthesized-mouse handling
             // is suppressed below, else it focuses on every touch-START and pops the
             // keyboard the moment you begin a scroll). Always send ONE click + ripple;
@@ -1026,6 +1035,34 @@ export class Terminal extends Component<Props, State> {
         const col = Math.min(Math.max(Math.floor((clientX - rect.left) / (rect.width / term.cols)) + 1, 1), term.cols);
         const row = Math.min(Math.max(Math.floor((clientY - rect.top) / (rect.height / term.rows)) + 1, 1), term.rows);
         this.xterm.sendData(`\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`);
+    }
+
+    // The clickable link (if any) under a tap. On coarse pointers every browser click on
+    // the terminal is swallowed (see swallowMouse) so xterm's own link activation never
+    // fires — the tap handler opens the link itself. Uses the SAME wrapped-link provider as
+    // the desktop click path (computeLinks), so a URL hard-wrapped by Claude Code opens
+    // whole, not truncated.
+    private linkAt(clientX: number, clientY: number): ILink | null {
+        const term = window.term;
+        const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
+        if (!term || !screen) return null;
+        const rect = screen.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return null;
+        const col = Math.min(Math.max(Math.floor((clientX - rect.left) / (rect.width / term.cols)) + 1, 1), term.cols);
+        const row = Math.min(Math.max(Math.floor((clientY - rect.top) / (rect.height / term.rows)) + 1, 1), term.rows);
+        let links: ILink[];
+        try {
+            links = computeLinks(term, row, openLink);
+        } catch {
+            return null;
+        }
+        for (const l of links) {
+            const { start, end } = l.range;
+            const afterStart = row > start.y || (row === start.y && col >= start.x);
+            const beforeEnd = row < end.y || (row === end.y && col <= end.x);
+            if (afterStart && beforeEnd) return l;
+        }
+        return null;
     }
 
     // Brief teal ripple at the tap point — mobile feedback that a tap landed and

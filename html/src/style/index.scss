@@ -1,3 +1,14 @@
+// Kitty Unicode-placeholder support: a 1-glyph font that maps U+10EEEE to a BLANK glyph.
+// Prepended to the xterm fontFamily (see xterm/index.ts), so the terminal never paints the
+// placeholder's "notdef" tofu box. Wherever the inline-image canvas doesn't cover a
+// placeholder cell (HiDPI sub-cell drift on iOS Safari), the cell shows terminal background
+// instead of a red □ box. 588-byte woff, inlined so the CSP-strict page stays self-contained.
+@font-face {
+    font-family: 'KittyBlank';
+    src: url(data:font/woff;base64,d09GRgABAAAAAAJMAAoAAAAAAoQAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAABXAAAADAAAABgRN9Lg2NtYXAAAAGUAAAANQAAAFAAPN6PZ2x5ZgAAAdQAAAABAAAAAQAAAABoZWFkAAAA9AAAADYAAAA2LAPF0GhoZWEAAAEsAAAAGgAAACQDIgMjaG10eAAAAYwAAAAIAAAACAPoAABsb2NhAAABzAAAAAYAAAAGAAAAAG1heHAAAAFIAAAAEwAAACAAAwACbmFtZQAAAdgAAABZAAAAaUkeOtxwb3N0AAACNAAAABYAAAAsbWdzzQABAAAAAQAASDNZGV8PPPUAAwPoAAAAAOZ2wngAAAAA5nbCeAAAAAAAAAAAAAAAAwACAAAAAAAAeJxjYGRgYFb4bwEkXzBAACMDKmACAD/KAkoAAHicY2BkYGBgYoABBAsKAACXAAYAeJxjYGZ+wTiBgZWBhYEIwATEMIX2QMDA8B8ImBX+WzAwMCswnEBTrsDAAABhTwjsA+gAAAAAAAB4nGNgYGBmgGAZIMkIpbmAtAkDC4MEkGYCQiD4/x+MQSp4QHygOghgZBB49w6MgWwA00oIowAAAAAAAAAAAAAAAAAAAHicLYhBCoAgAARHE6IOQdAX+kIP8NrNH3gQEcWD2MHfp9EsLDsLKC4EA8H69UAyd5sQaunPwf5vycZ5h1qbTjZH4/yTbOEmUHsamoQlEzE4PM/n5QXU0g52AAAAeJxjYGLAD4DyjEysSTmJedkABtACFQAA) format('woff');
+    font-display: block;
+}
+
 html,
 body {
     height: 100%;
@@ -223,185 +234,6 @@ body {
 }
 
 // ── Media tray ──────────────────────────────────────────────────────────────
-// Collects previewable media.internal / notes.internal links printed in the
-// terminal; floating button (top-right) → list → in-place preview. All portaled
-// to <body> (see MediaTray), so it sits above the terminal and the key bar.
-#media-tray {
-    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-    color: #d2d2d2;
-}
-
-// Floating count pill, top-right, clear of the centered upload-toast. No icon —
-// just the link count in a cyan-accented monospace pill.
-.mt-btn {
-    position: fixed;
-    top: calc(8px + env(safe-area-inset-top));
-    right: calc(8px + env(safe-area-inset-right));
-    z-index: 50;
-    min-width: 34px;
-    height: 34px;
-    padding: 0 9px;
-    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-    font-size: 15px;
-    line-height: 32px;
-    text-align: center;
-    background: rgba(28, 28, 28, 0.92);
-    border: 1px solid #00a7aa;
-    border-radius: 17px;
-    color: #37e6e8;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-
-// Drop-down list under the button.
-.mt-panel {
-    position: fixed;
-    top: calc(50px + env(safe-area-inset-top));
-    right: calc(8px + env(safe-area-inset-right));
-    z-index: 50;
-    width: min(82vw, 340px);
-    max-height: 60vh;
-    display: flex;
-    flex-direction: column;
-    background: rgba(24, 24, 24, 0.97);
-    border: 1px solid #555;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
-}
-.mt-head {
-    padding: 8px 10px;
-    font-size: 12px;
-    color: #9a9a9a;
-    border-bottom: 1px solid #3a3a3a;
-}
-.mt-list {
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-}
-.mt-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 8px 10px;
-    background: none;
-    border: none;
-    border-bottom: 1px solid #2c2c2c;
-    color: #d2d2d2;
-    text-align: left;
-    cursor: pointer;
-    text-decoration: none; // anchor link items match the button items
-    box-sizing: border-box;
-}
-.mt-link .mt-type {
-    color: #7fc7ff; // external-link chip reads as a link
-}
-.mt-item:active {
-    background: #333;
-}
-.mt-thumb {
-    flex: 0 0 auto;
-    width: 40px;
-    height: 40px;
-    border-radius: 6px;
-    object-fit: cover;
-    background: #000;
-}
-.mt-type {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    color: #9a9a9a;
-    background: #3a3a3a;
-}
-.mt-name {
-    flex: 1 1 auto;
-    font-size: 13px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-// Full-screen in-place preview.
-.mt-preview {
-    position: fixed;
-    inset: 0;
-    z-index: 60;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-    background: rgba(0, 0, 0, 0.9);
-}
-.mt-x,
-.mt-open {
-    position: fixed;
-    top: calc(6px + env(safe-area-inset-top));
-    z-index: 61;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    line-height: 1;
-    color: #fff;
-    background: rgba(40, 40, 40, 0.8);
-    border: 1px solid #666;
-    border-radius: 20px;
-    cursor: pointer;
-    text-decoration: none;
-}
-.mt-x {
-    right: calc(10px + env(safe-area-inset-right));
-    font-size: 26px;
-}
-.mt-open {
-    left: calc(10px + env(safe-area-inset-left));
-    font-size: 20px;
-}
-.mt-stage {
-    max-width: 100%;
-    max-height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.mt-media {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-}
-.mt-media-audio {
-    width: min(86vw, 480px);
-}
-.mt-frame {
-    width: min(96vw, 1100px);
-    height: 88vh;
-    border: none;
-    background: #fff;
-    border-radius: 6px;
-}
-
-// pdf.js multi-page: each page is a canvas, stacked in a scrollable column.
-.mt-pdf {
-    width: min(96vw, 1100px);
-    max-height: 92vh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    background: #525659;
-    border-radius: 6px;
-    padding: 8px 0;
-}
-.mt-pdf-page {
-    display: block;
-    margin: 0 auto 8px;
-    background: #fff;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-}
 
 // ── Notification tray ────────────────────────────────────────────────────────
 // Floating feed (top-left, amber) of messages pushed from the host via cc-notify.

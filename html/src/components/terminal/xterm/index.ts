@@ -174,6 +174,20 @@ export class Xterm {
     public open(parent: HTMLElement) {
         this.terminal = new Terminal(this.options.termOptions);
         const { terminal, fitAddon, overlayAddon, clipboardAddon } = this;
+        // Prepend the blank-glyph font (see index.scss @font-face) so the canvas/webgl
+        // renderers paint U+10EEEE (kitty image placeholder) as nothing instead of a notdef
+        // "tofu" box. The browser only uses KittyBlank for codepoints it actually has (just
+        // U+10EEEE); every other char falls through to the real monospace stack, so cell
+        // metrics are unaffected. Force-load it before first paint to avoid a tofu flash.
+        terminal.options.fontFamily = `KittyBlank, ${terminal.options.fontFamily || 'monospace'}`;
+        if (document.fonts && document.fonts.load) {
+            document.fonts
+                .load('16px KittyBlank')
+                .then(() => this.terminal?.refresh(0, this.terminal.rows - 1))
+                .catch(() => {
+                    /* font optional; noop */
+                });
+        }
         window.term = terminal as TtydTerminal;
         window.term.fit = () => {
             this.fitAddon.fit();

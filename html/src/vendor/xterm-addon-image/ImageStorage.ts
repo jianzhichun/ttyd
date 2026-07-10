@@ -6,7 +6,7 @@
 import { IDisposable } from '@xterm/xterm';
 import { ImageRenderer } from './ImageRenderer';
 import { ITerminalExt, IExtendedAttrsImage, IImageAddonOptions, IImageSpec, IPlaceholderImageSpec, IBufferLineExt, BgFlags, Cell, Content, ICellSize, ExtFlags, Attributes, UnderlineStyle } from './Types';
-import { KITTY_PLACEHOLDER, decodePlaceholder } from './KittyPlaceholder';
+import { KITTY_PLACEHOLDER, decodePlaceholder, fgToImageId } from './KittyPlaceholder';
 
 
 // fallback default cell size
@@ -492,24 +492,30 @@ export class ImageStorage implements IDisposable {
       return startCol;
     }
     const spec = this._phImages.get(first.id);
-    let prev = first;
     let col = startCol;
     let count = 1;
+    // Extend the run over every contiguous placeholder cell that belongs to THIS image.
+    // We key ONLY on (codepoint === PLACEHOLDER) and image id — deliberately NOT on a
+    // strictly consecutive (prev.col + 1) diacritic chain. Our emitter always lays a solid
+    // gridCols×gridRows block, so the strict chain buys nothing; worse, if one cell's
+    // combining-mark decode hiccups on a given engine (observed on iOS Safari as the last
+    // ~2 columns dropping out to a "tofu" strip while desktop drew the full width), the
+    // strict check silently truncates every trailing cell. A cell whose fg is default/
+    // inherit (id < 0) stays in the run; a cell carrying a DIFFERENT explicit id ends it.
     while (++col < cols) {
       const c = line._data[col * Cell.SIZE + Cell.CONTENT];
       const cp0 = (c & Content.IS_COMBINED_MASK) ? line.getString(col).codePointAt(0) : (c & Content.CODEPOINT_MASK);
       if (cp0 !== KITTY_PLACEHOLDER) {
         break;
       }
-      const d = decodePlaceholder(line.getString(col), line.getFg(col), prev);
-      if (!d || d.id !== first.id || d.row !== first.row || d.col !== prev.col + 1) {
-        break;
+      const idHere = fgToImageId(line.getFg(col));
+      if (idHere >= 0 && idHere !== first.id) {
+        break;                                        // a different image's run starts here
       }
-      if (spec && d.col >= spec.gridCols) {
-        break;                                        // clamp the merge run to the image width
-      }
-      prev = d;
       count++;
+      if (spec && count >= spec.gridCols) {
+        break;                                        // covered the full image width
+      }
     }
     col--;
     if (spec) {
