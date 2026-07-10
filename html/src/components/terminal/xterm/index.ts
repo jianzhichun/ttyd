@@ -9,6 +9,7 @@ import { registerWrappedWebLinks } from './addons/wraplinks';
 import { ImageAddon } from '@xterm/addon-image';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { OverlayAddon } from './addons/overlay';
+import { TexMathAddon } from './addons/texmath';
 import { TimestampAddon } from './addons/timestamps';
 import { ZmodemAddon } from './addons/zmodem';
 
@@ -52,6 +53,7 @@ export interface ClientOptions {
     trzszDragInitTimeout: number;
     unicodeVersion: string;
     closeOnDisconnect: boolean;
+    disableTexMath: boolean;
 }
 
 export interface FlowControl {
@@ -88,6 +90,7 @@ export class Xterm {
     private fitAddon = new FitAddon();
     private overlayAddon = new OverlayAddon();
     private timestampAddon = new TimestampAddon();
+    private texmathAddon = new TexMathAddon();
     private clipboardAddon = new ClipboardAddon();
     private webglAddon?: WebglAddon;
     private canvasAddon?: CanvasAddon;
@@ -185,6 +188,7 @@ export class Xterm {
         terminal.loadAddon(overlayAddon);
         terminal.loadAddon(clipboardAddon);
         terminal.loadAddon(this.timestampAddon);
+        terminal.loadAddon(this.texmathAddon);
 
         terminal.open(parent);
         this.guardIme(parent);
@@ -796,6 +800,12 @@ export class Xterm {
                     if (value) {
                         terminal.loadAddon(register(new ImageAddon()));
                         console.log('[ttyd] Sixel enabled');
+                    }
+                    break;
+                case 'disableTexMath':
+                    if (value) {
+                        console.log('[ttyd] TeX math rendering disabled');
+                        this.texmathAddon.setEnabled(false);
                     }
                     break;
                 case 'closeOnDisconnect':

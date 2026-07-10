@@ -700,6 +700,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/katex@npm:^0.16.8":
+  version: 0.16.8
+  resolution: "@types/katex@npm:0.16.8"
+  checksum: 4bf5d83d2430bc04c183765c5916c21180a75cb0181172a0aac7350943507679ceb79bfd13e394cf7c101b7417564d14c0c660baa93b16f2f42baef22a99435c
+  languageName: node
+  linkType: hard
+
 "@types/mime@npm:*":
   version: 3.0.1
   resolution: "@types/mime@npm:3.0.1"
@@ -2712,7 +2719,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"commander@npm:^8.1.0":
+"commander@npm:^8.1.0, commander@npm:^8.3.0":
   version: 8.3.0
   resolution: "commander@npm:8.3.0"
   checksum: 0f82321821fc27b83bd409510bb9deeebcfa799ff0bf5d102128b500b7af22872c0c92cb6a0ebc5a4cf19c6b550fba9cedfa7329d18c6442a625f851377bacf0
@@ -6594,6 +6601,17 @@ __metadata:
   version: 1.0.0
   resolution: "just-debounce@npm:1.0.0"
   checksum: bb46dbbdd83915fc7b0c18665eec233f1a0de4989454124ab988e52b1a2f63c998add0e64cb4a0a1368938d27f4266e044da15eee19124e080baf420a2874581
+  languageName: node
+  linkType: hard
+
+"katex@npm:^0.17.0":
+  version: 0.17.0
+  resolution: "katex@npm:0.17.0"
+  dependencies:
+    commander: ^8.3.0
+  bin:
+    katex: cli.js
+  checksum: 1069bff9893a57534b453191a5242c30e3f533e6cf5fad8301a250aa2f22cfefab4e30def821eb23fee72e33379898d72e3d8b70a845dd0dd0d6d5ec0ab42e34
   languageName: node
   linkType: hard
 
@@ -10690,6 +10708,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "ttyd@workspace:."
   dependencies:
+    "@types/katex": ^0.16.8
     "@typescript-eslint/eslint-plugin": ^7.1.1
     "@xterm/addon-canvas": ^0.7.0
     "@xterm/addon-clipboard": ^0.1.0
@@ -10715,6 +10734,7 @@ __metadata:
     gulp-inline-source: ^4.0.0
     gulp-rename: ^2.0.0
     html-webpack-plugin: ^5.6.0
+    katex: ^0.17.0
     mini-css-extract-plugin: ^2.8.1
     pdfjs-dist: 3.11.174
     preact: ^10.19.6

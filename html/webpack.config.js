@@ -28,7 +28,28 @@ const baseConfig = {
             },
             {
                 test: /\.s?[ac]ss$/,
-                use: [devMode ? 'style-loader' : MiniCssExtractPlugin.loader, 'css-loader', 'sass-loader'],
+                use: [
+                    devMode ? 'style-loader' : MiniCssExtractPlugin.loader,
+                    {
+                        loader: 'css-loader',
+                        options: {
+                            // KaTeX's @font-face lists woff2 + woff + ttf per font; every
+                            // browser we serve picks the first supported source (woff2), so
+                            // bundling the woff/ttf fallbacks would triple the font payload
+                            // for nothing. Leave those url()s unresolved (never fetched).
+                            url: {
+                                filter: (url) => !url.endsWith('.woff') && !url.endsWith('.ttf'),
+                            },
+                        },
+                    },
+                    'sass-loader',
+                ],
+            },
+            {
+                // KaTeX math fonts — ttyd serves a single inlined html, so fonts must
+                // ride along as data: URIs (296KB of woff2 total).
+                test: /\.woff2$/,
+                type: 'asset/inline',
             },
             {
                 // `import x from '...?raw'` -> file contents as a string (used to

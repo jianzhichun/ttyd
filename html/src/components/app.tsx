@@ -17,6 +17,7 @@ const clientOptions = {
     enableTrzsz: false,
     enableSixel: false,
     closeOnDisconnect: false,
+    disableTexMath: false,
     isWindows: false,
     unicodeVersion: '11',
 } as ClientOptions;
