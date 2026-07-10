@@ -6,7 +6,7 @@ import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
 import { registerWrappedWebLinks } from './addons/wraplinks';
-import { ImageAddon } from '@xterm/addon-image';
+import { ImageAddon } from '../../../vendor/xterm-addon-image/ImageAddon';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { OverlayAddon } from './addons/overlay';
 import { ZmodemAddon } from './addons/zmodem';

@@ -2,6 +2,11 @@
   "extends": "./node_modules/gts/tsconfig-google.json",
   "compilerOptions": {
     "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "common/*": ["node_modules/@xterm/xterm/src/common/*"],
+      "browser/*": ["node_modules/@xterm/xterm/src/browser/*"]
+    },
     "esModuleInterop": true,
     "jsx": "react",
     "jsxFactory": "h",

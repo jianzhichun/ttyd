@@ -43,7 +43,13 @@ const baseConfig = {
         // pdf.js lists node-canvas as an optional dep for server-side rendering;
         // the browser build never uses it. Ignore it so webpack doesn't try to
         // bundle a native module.
-        alias: { canvas: false },
+        alias: {
+            canvas: false,
+            // The vendored @xterm/addon-image (src/vendor) imports xterm internals by
+            // bare specifier ('common/...', 'browser/...'); point them at xterm's src.
+            common: path.resolve(__dirname, 'node_modules/@xterm/xterm/src/common'),
+            browser: path.resolve(__dirname, 'node_modules/@xterm/xterm/src/browser'),
+        },
     },
     plugins: [
         // ttyd serves ONE inlined html, so everything must land in a single JS
@@ -52,6 +58,8 @@ const baseConfig = {
         new ESLintPlugin({
             context: path.resolve(__dirname, '.'),
             extensions: ['js', 'jsx', 'ts', 'tsx'],
+            // vendored upstream addon — don't hold it to ttyd's lint rules
+            exclude: ['node_modules', 'src/vendor'],
         }),
         new CopyWebpackPlugin({
             patterns: [{ from: './favicon.png', to: '.' }],
