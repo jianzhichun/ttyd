@@ -36,6 +36,7 @@ const GRACE_MS = 600;
 export class VideoOverlay implements IDisposable {
   private _entries: Map<number, IEntry> = new Map();
   private _raf = 0;
+  private _graceTimer = 0;   // one-shot that re-runs _sync so an off-screen video is torn down
   private _disposed = false;
 
   constructor(
@@ -48,6 +49,7 @@ export class VideoOverlay implements IDisposable {
     this._disposed = true;
     const win = this._win();
     if (this._raf) { win.cancelAnimationFrame(this._raf); this._raf = 0; }
+    if (this._graceTimer) { win.clearTimeout(this._graceTimer); this._graceTimer = 0; }
     for (const e of this._entries.values()) {
       this._teardown(e);
     }
@@ -75,6 +77,9 @@ export class VideoOverlay implements IDisposable {
     if (!screen || !cell) {
       return;
     }
+    // We're running now, so any pending self-scheduled grace pass is redundant; the loop
+    // below re-arms it if an entry is still coasting through its grace window.
+    if (this._graceTimer) { this._win().clearTimeout(this._graceTimer); this._graceTimer = 0; }
     const blocks = this._storage.scanVideoBlocks();
     const now = this._win().performance.now();
     const seen: Set<number> = new Set();
@@ -82,7 +87,7 @@ export class VideoOverlay implements IDisposable {
       seen.add(b.id);
       let e = this._entries.get(b.id);
       if (!e) {
-        e = this._create(b.videoUrl, screen);
+        e = this._create(screen);
         this._entries.set(b.id, e);
       }
       e.lastSeen = now;
@@ -106,24 +111,29 @@ export class VideoOverlay implements IDisposable {
         this._entries.delete(id);
       } else {
         e.wrap.style.visibility = 'hidden';        // gone this frame but within grace — keep it
+        // _sync only runs on render; if renders stop (idle) an off-screen video would keep
+        // playing forever, so guarantee one more pass after the grace window to tear it down.
+        if (!this._graceTimer) {
+          this._graceTimer = this._win().setTimeout(() => { this._graceTimer = 0; this._sync(); }, GRACE_MS + 32);
+        }
       }
     }
   }
 
-  private _create(url: string, screen: HTMLElement): IEntry {
+  private _create(screen: HTMLElement): IEntry {
     const doc = screen.ownerDocument;
     const wrap = doc.createElement('div');
-    wrap.className = 'cc-vid';
-    wrap.style.position = 'absolute';
+    wrap.className = 'cc-vid';                        // .cc-vid supplies position:absolute + layout
     wrap.innerHTML = '<div class="cc-vid-badge"><span class="cc-vid-tri"></span></div>';
-    const entry: IEntry = { wrap, video: null, lastSeen: 0, url };
+    const entry: IEntry = { wrap, video: null, lastSeen: 0, url: '' };   // url filled by _sync each pass
     // Own every touch that starts on the poster so the terminal's tap/scroll/long-press
     // logic (ancestor listeners) doesn't also act. A tap/click starts playback.
     const stop = (ev: Event) => ev.stopPropagation();
+    const tap = (ev: Event) => { ev.stopPropagation(); if (!entry.video) { this._play(entry); } };
     wrap.addEventListener('touchstart', stop);
     wrap.addEventListener('touchmove', stop);
-    wrap.addEventListener('touchend', (ev) => { ev.stopPropagation(); if (!entry.video) { this._play(entry); } });
-    wrap.addEventListener('click', (ev) => { ev.stopPropagation(); if (!entry.video) { this._play(entry); } });
+    wrap.addEventListener('touchend', tap);
+    wrap.addEventListener('click', tap);
     screen.appendChild(wrap);
     return entry;
   }
@@ -140,10 +150,7 @@ export class VideoOverlay implements IDisposable {
     e.wrap.innerHTML = '';                            // drop the ▶ badge
     e.wrap.appendChild(v);
     e.video = v;
-    const p = v.play();
-    if (p && typeof p.catch === 'function') {
-      p.catch(() => {});                             // if the play promise rejects, controls still work
-    }
+    v.play()?.catch(() => {});                       // if the play promise rejects, controls still work
   }
 
   private _teardown(e: IEntry): void {
