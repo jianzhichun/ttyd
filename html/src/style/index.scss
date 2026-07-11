@@ -5,7 +5,8 @@
 // instead of a red □ box. 588-byte woff, inlined so the CSP-strict page stays self-contained.
 @font-face {
     font-family: 'KittyBlank';
-    src: url(data:font/woff;base64,d09GRgABAAAAAAJMAAoAAAAAAoQAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAABXAAAADAAAABgRN9Lg2NtYXAAAAGUAAAANQAAAFAAPN6PZ2x5ZgAAAdQAAAABAAAAAQAAAABoZWFkAAAA9AAAADYAAAA2LAPF0GhoZWEAAAEsAAAAGgAAACQDIgMjaG10eAAAAYwAAAAIAAAACAPoAABsb2NhAAABzAAAAAYAAAAGAAAAAG1heHAAAAFIAAAAEwAAACAAAwACbmFtZQAAAdgAAABZAAAAaUkeOtxwb3N0AAACNAAAABYAAAAsbWdzzQABAAAAAQAASDNZGV8PPPUAAwPoAAAAAOZ2wngAAAAA5nbCeAAAAAAAAAAAAAAAAwACAAAAAAAAeJxjYGRgYFb4bwEkXzBAACMDKmACAD/KAkoAAHicY2BkYGBgYoABBAsKAACXAAYAeJxjYGZ+wTiBgZWBhYEIwATEMIX2QMDA8B8ImBX+WzAwMCswnEBTrsDAAABhTwjsA+gAAAAAAAB4nGNgYGBmgGAZIMkIpbmAtAkDC4MEkGYCQiD4/x+MQSp4QHygOghgZBB49w6MgWwA00oIowAAAAAAAAAAAAAAAAAAAHicLYhBCoAgAARHE6IOQdAX+kIP8NrNH3gQEcWD2MHfp9EsLDsLKC4EA8H69UAyd5sQaunPwf5vycZ5h1qbTjZH4/yTbOEmUHsamoQlEzE4PM/n5QXU0g52AAAAeJxjYGLAD4DyjEysSTmJedkABtACFQAA) format('woff');
+    src: url(data:font/woff;base64,d09GRgABAAAAAAJMAAoAAAAAAoQAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAABXAAAADAAAABgRN9Lg2NtYXAAAAGUAAAANQAAAFAAPN6PZ2x5ZgAAAdQAAAABAAAAAQAAAABoZWFkAAAA9AAAADYAAAA2LAPF0GhoZWEAAAEsAAAAGgAAACQDIgMjaG10eAAAAYwAAAAIAAAACAPoAABsb2NhAAABzAAAAAYAAAAGAAAAAG1heHAAAAFIAAAAEwAAACAAAwACbmFtZQAAAdgAAABZAAAAaUkeOtxwb3N0AAACNAAAABYAAAAsbWdzzQABAAAAAQAASDNZGV8PPPUAAwPoAAAAAOZ2wngAAAAA5nbCeAAAAAAAAAAAAAAAAwACAAAAAAAAeJxjYGRgYFb4bwEkXzBAACMDKmACAD/KAkoAAHicY2BkYGBgYoABBAsKAACXAAYAeJxjYGZ+wTiBgZWBhYEIwATEMIX2QMDA8B8ImBX+WzAwMCswnEBTrsDAAABhTwjsA+gAAAAAAAB4nGNgYGBmgGAZIMkIpbmAtAkDC4MEkGYCQiD4/x+MQSp4QHygOghgZBB49w6MgWwA00oIowAAAAAAAAAAAAAAAAAAAHicLYhBCoAgAARHE6IOQdAX+kIP8NrNH3gQEcWD2MHfp9EsLDsLKC4EA8H69UAyd5sQaunPwf5vycZ5h1qbTjZH4/yTbOEmUHsamoQlEzE4PM/n5QXU0g52AAAAeJxjYGLAD4DyjEysSTmJedkABtACFQAA)
+        format('woff');
     font-display: block;
 }
 
@@ -152,10 +153,29 @@ body {
 }
 
 @media (pointer: coarse) {
+    // Keybar is fixed / out of the flex flow, so the terminal fills the whole
+    // height and toggling the bar never resizes the xterm grid. Keep the terminal's
+    // last row clear of the home indicator while the keybar is hidden; env()
+    // collapses to 0 once the keyboard (and keybar) are up, so this never fights the
+    // keyboard-lift math in setupViewport.
+    #terminal-root {
+        box-sizing: border-box;
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
     // Uniform 7-per-row grid, equal-width cells. Long labels truncate (ellipsis),
     // never overflow. The ↑/↓ pair shares one cell (↑ above ↓) so 11 function keys
     // + 4 arrows fit in exactly 2 rows.
     #keybar {
+        // Fixed, not a flex child: showing/hiding it must not resize the terminal
+        // grid (a flex toggle would refit xterm → resize the PTY → tmux redraw on
+        // every keyboard open/close). Pinned above the keyboard via transform.
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 30;
+        box-sizing: border-box;
         display: grid;
         grid-template-columns: repeat(7, 1fr);
         grid-auto-rows: 44px;
@@ -167,6 +187,21 @@ body {
         user-select: none;
         -webkit-user-select: none;
         will-change: transform; // pinned above the keyboard via transform (setupViewport)
+        // Shown ONLY while the soft keyboard is up (declutter when idle) —
+        // setupViewport toggles .keybar-up off this.kbShown. Fade via opacity/
+        // visibility only: transform is reserved for the keyboard-follow pin, so it
+        // must never be part of a transition. visibility (not display:none) keeps
+        // the bar measurable, so the pin can position it in the frame it appears.
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity 0.12s ease;
+    }
+
+    #keybar.keybar-up {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
     }
 
     .keybar-key {
@@ -565,4 +600,57 @@ body {
         transform: scale(2.6);
         opacity: 0;
     }
+}
+
+/* ---- inline video: cell-anchored player over a Kitty-placeholder poster ------
+   VideoOverlay (xterm-addon-image) lays one .cc-vid per video block inside
+   .xterm-screen, positioned in CSS px to cover the poster tiles. Transparent so
+   the poster (painted on the image canvas beneath) shows through until tapped;
+   the ▶ badge invites the tap. On tap it swaps in a <video> that plays in place. */
+.cc-vid {
+    position: absolute;
+    z-index: 6; /* above the image-layer canvas (auto z), below page-level overlays */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    pointer-events: auto;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.cc-vid-badge {
+    box-sizing: border-box;
+    width: clamp(28px, 22%, 64px);
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+        background 0.15s ease,
+        transform 0.15s ease;
+    pointer-events: none; /* the whole .cc-vid is the hit target, not just the badge */
+}
+.cc-vid:hover .cc-vid-badge,
+.cc-vid:active .cc-vid-badge {
+    background: rgba(0, 0, 0, 0.72);
+    transform: scale(1.06);
+}
+.cc-vid-tri {
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 0.42em 0 0.42em 0.7em;
+    border-color: transparent transparent transparent rgba(255, 255, 255, 0.96);
+    margin-left: 0.16em; /* optical centring of the triangle in the circle */
+    font-size: clamp(14px, 3vw, 26px);
+}
+.cc-vid-el {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+    display: block;
 }
