@@ -16,12 +16,16 @@ export interface IEmbedSpec {
   gridCols: number;
   gridRows: number;
   objectUrl?: string;          // set when src is an object: URL we own (revoke on evict/reset)
+  openUrl?: string;            // the file's REAL address, kept when src is an object: URL. Framing bytes
+                               // is forced on us (Chrome won't frame a cross-origin PDF); only a real URL
+                               // can be opened top-level, the one way a phone paginates a PDF.
 }
 
 export interface IEmbedBlock {
   id: number;
   kind: string;
   src: string;
+  openUrl?: string;
   gridCols: number;
   gridRows: number;
   originRow: number;           // full-block top-left in ON-SCREEN cell coords (may be < 0 when partly scrolled)
@@ -520,7 +524,7 @@ export class ImageStorage implements IDisposable {
         }
         if (acc.has(ph.id)) continue;                 // one entry per block; origin from the first cell
         acc.set(ph.id, {
-          id: ph.id, kind: spec.kind, src: spec.src,
+          id: ph.id, kind: spec.kind, src: spec.src, openUrl: spec.openUrl,
           gridCols: spec.gridCols, gridRows: spec.gridRows,
           originRow: row - ph.row, originCol: col - ph.col,   // full top-left; may be off-screen
         });
@@ -545,15 +549,22 @@ export class ImageStorage implements IDisposable {
       const gc = parseInt(r.headers.get('X-Image-Cols') || '', 10) || 1;
       const gr = parseInt(r.headers.get('X-Image-Rows') || '', 10) || 1;
       const kind = (r.headers.get('X-CC-Embed-Kind') || 'img') as IEmbedSpec['kind'];
-      let src = r.headers.get('X-CC-Embed-Url') || '';
+      const url = r.headers.get('X-CC-Embed-Url') || '';
+      const blob = await r.blob();                    // url-backed entries carry no body
+      let src = url;
       let objectUrl: string | undefined;
-      if (!src) {                                     // no url → the bytes are in this response body
-        objectUrl = URL.createObjectURL(await r.blob());
+      let openUrl: string | undefined;
+      if (blob.size) {
+        // Bytes present → THEY are what we render, not the url: the sidecar sends them precisely for
+        // content the browser won't load cross-origin (a PDF in an iframe). Keep the url if we got one
+        // too — it's the file's real address, the only thing that can be opened top-level.
+        objectUrl = URL.createObjectURL(blob);
         src = objectUrl;
+        openUrl = url || undefined;
       }
       this._pending.delete(id);
       this._evictIfNeeded();
-      this._phImages.set(id, { kind, src, gridCols: gc, gridRows: gr, objectUrl });
+      this._phImages.set(id, { kind, src, gridCols: gc, gridRows: gr, objectUrl, openUrl });
       this._scheduleRepaint();
     }).catch(() => {
       this._pending.delete(id);

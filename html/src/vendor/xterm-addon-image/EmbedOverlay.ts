@@ -11,6 +11,10 @@
  *   video  → <video controls preload=metadata>  (native first frame + controls + sound)
  *   iframe → <iframe> scaled  (live miniature of the page/pdf; tap to expand full-size)
  *
+ * A PDF is framed from same-origin BYTES (Chrome refuses a cross-origin PDF in an iframe) but
+ * carries its real media.internal address as `openUrl`, because on a touch device the expand step
+ * must leave the frame entirely: iOS WebKit paints a framed PDF as page 1, full stop.
+ *
  * Elements load when their block is visible and unload (grace-delayed) when it scrolls away, so
  * only what's on screen is live. Interaction: the overlay owns its touches with bubble-phase
  * stopPropagation so the terminal's tap/scroll/long-press (ancestor listeners) don't fire, while
@@ -30,6 +34,8 @@ interface IEntry {
 
 const GRACE_MS = 600;   // keep an entry this long after its block stops being scanned (transient redraws)
 const IFRAME_DESIGN_W = 1280;   // iframes render at this width then scale down (must match the hook)
+// Touch device: gates the tap-to-open-natively path in _expand. Same probe the rest of the client uses.
+const COARSE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 
 export class EmbedOverlay implements IDisposable {
   private _entries: Map<number, IEntry> = new Map();
@@ -156,7 +162,7 @@ export class EmbedOverlay implements IDisposable {
       // A sandbox would also break Chrome's built-in PDF viewer (blocked in any sandboxed frame).
       wrap.appendChild(f);
       entry.el = f;
-      this._wire(wrap, () => this._expand('iframe', b.src));   // inline is a preview; tap to expand
+      this._wire(wrap, () => this._expand('iframe', b.src, b.openUrl));   // inline is a preview; tap to expand
     } else {                                          // img
       const img = doc.createElement('img');
       img.className = 'cc-embed-el';
@@ -178,8 +184,17 @@ export class EmbedOverlay implements IDisposable {
     wrap.addEventListener('touchstart', stop);
     wrap.addEventListener('touchmove', stop);
     if (onTap) {
-      wrap.addEventListener('touchend', (ev) => { ev.stopPropagation(); onTap(); });
-      wrap.addEventListener('click', (ev) => { ev.stopPropagation(); onTap(); });
+      wrap.addEventListener('touchend', (ev) => {
+        ev.stopPropagation();
+        // Kill the synthetic click this touch would emit. It arrives AFTER onTap has put the modal on
+        // screen, so it lands on the MODAL, not on us: on the backdrop it closes it right back (a block
+        // near a screen edge then never opens at all), and elsewhere it runs onTap twice (two tabs from
+        // one tap). Safe here — the native gestures we want (long-press an <img> to save, <video>
+        // controls) act at the target on touchstart, before this.
+        ev.preventDefault();
+        onTap();
+      });
+      wrap.addEventListener('click', (ev) => { ev.stopPropagation(); onTap(); });   // desktop mouse
     } else {
       wrap.addEventListener('touchend', stop);        // video: native controls act; just block the terminal
     }
@@ -204,10 +219,22 @@ export class EmbedOverlay implements IDisposable {
   }
 
   // ---- expand: a page-level lightbox for img / iframe -----------------------
-  private _expand(kind: string, src: string): void {
+  private _expand(kind: string, src: string, openUrl?: string): void {
     const screen = this._renderer.screenElement;
     if (!screen) {
       return;
+    }
+    // On a touch device, don't expand a PDF into an iframe at all: iOS WebKit paints a framed PDF as
+    // page 1 (no scroll, no pager) and Chrome-on-Android won't frame one. Hand the file to the
+    // browser's own viewer, which paginates, searches and shares it. NEW TAB, never this one —
+    // navigating away would tear down the terminal's socket. openUrl is set only when the sidecar sent
+    // bytes AND the file's real address (today: exactly the PDF case); html iframes are url-backed,
+    // frame correctly everywhere, and keep the in-page modal.
+    if (kind === 'iframe' && openUrl && COARSE) {
+      if (this._win().open(openUrl, '_blank')) {
+        return;
+      }
+      // popup blocked → fall through to the modal; page 1 beats nothing
     }
     this._closeModal();
     const doc = screen.ownerDocument;
