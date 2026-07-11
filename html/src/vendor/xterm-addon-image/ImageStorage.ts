@@ -5,17 +5,30 @@
 
 import { IDisposable } from '@xterm/xterm';
 import { ImageRenderer } from './ImageRenderer';
-import { ITerminalExt, IExtendedAttrsImage, IImageAddonOptions, IImageSpec, IPlaceholderImageSpec, IBufferLineExt, BgFlags, Cell, Content, ICellSize, ExtFlags, Attributes, UnderlineStyle } from './Types';
-import { KITTY_PLACEHOLDER, decodePlaceholder, fgToImageId, IPH } from './KittyPlaceholder';
+import { ITerminalExt, IExtendedAttrsImage, IImageAddonOptions, IImageSpec, IBufferLineExt, BgFlags, Cell, Content, ICellSize, ExtFlags, Attributes, UnderlineStyle } from './Types';
+import { KITTY_PLACEHOLDER, decodePlaceholder, IPH } from './KittyPlaceholder';
 
-export interface IVideoBlock {
-  id: number;
-  videoUrl: string;
-  minRow: number;   // on-screen cell extent (0..rows-1)
-  maxRow: number;
-  minCol: number;
-  maxCol: number;
+// A Kitty placeholder is now a pure position ANCHOR: the addon fetches lightweight metadata
+// (no bitmap) and EmbedOverlay materialises a DOM element over the block.
+export interface IEmbedSpec {
+  kind: 'img' | 'video' | 'iframe';
+  src: string;                 // the element's src: a media.internal URL, or an object: URL for uploaded bytes
+  gridCols: number;
+  gridRows: number;
+  objectUrl?: string;          // set when src is an object: URL we own (revoke on evict/reset)
 }
+
+export interface IEmbedBlock {
+  id: number;
+  kind: string;
+  src: string;
+  gridCols: number;
+  gridRows: number;
+  originRow: number;           // full-block top-left in ON-SCREEN cell coords (may be < 0 when partly scrolled)
+  originCol: number;
+}
+
+const PH_MAX = 128;            // max cached embed specs (LRU); tiny metadata, so count-based
 
 
 // fallback default cell size
@@ -137,13 +150,11 @@ export class ImageStorage implements IDisposable {
   // a SEPARATE map from _images so reflow/resize/alt-switch fixups (which walk _images
   // / _extendedAttrs) never touch them — they are re-derived from the surviving cells
   // every frame, which is what makes them redraw-safe.
-  private _phImages: Map<number, IPlaceholderImageSpec> = new Map();  // id -> ready spec
+  private _phImages: Map<number, IEmbedSpec> = new Map();             // id -> embed metadata (no bitmap)
   private _pending: Set<number> = new Set();                          // ids with in-flight GET
   private _failed: Map<number, number> = new Map();                   // id -> last-fail ts (cooldown)
   private _repaintScheduled = false;
   private _drewThisFrame = false;
-  private _phPixels = 0;                                              // rough pixel budget for _phImages
-  private _phPixelLimit = 64000000;                                  // ~256 MB of decoded bitmaps
 
   private _viewportMetrics: { cols: number, rows: number };
 
@@ -176,12 +187,11 @@ export class ImageStorage implements IDisposable {
     // therefore we can just wipe the map here
     this._images.clear();
     for (const spec of this._phImages.values()) {
-      (spec.orig as ImageBitmap)?.close?.();
+      if (spec.objectUrl) URL.revokeObjectURL(spec.objectUrl);
     }
     this._phImages.clear();
     this._pending.clear();
     this._failed.clear();
-    this._phPixels = 0;
     this._renderer.clearAll();
   }
 
@@ -377,10 +387,10 @@ export class ImageStorage implements IDisposable {
     }
     // rescale if needed
     this._renderer.rescaleCanvas();
-    // exit early only if there is genuinely nothing to test for. With Kitty
-    // placeholders on we must ALWAYS walk the viewport (placeholders are plain text
-    // re-emitted on every redraw — no escape hook fires), so don't early-exit here.
-    if (!this._images.size && !this._opts.kittyPlaceholders) {
+    // The canvas is now used ONLY by Sixel/IIP (_images). Kitty placeholders no longer draw
+    // here — they're anchors that EmbedOverlay renders as DOM elements — so exit early when
+    // there are no Sixel/IIP images regardless of kittyPlaceholders.
+    if (!this._images.size) {
       if (!this._fullyCleared) {
         this._renderer.clearAll();
         this._fullyCleared = true;
@@ -414,19 +424,7 @@ export class ImageStorage implements IDisposable {
       const line = buffer.lines.get(row + buffer.ydisp) as IBufferLineExt;
       if (!line) return;
       for (let col = 0; col < cols; ++col) {
-        // Kitty placeholder cell? (char-keyed, mutually exclusive with the sixel/iip
-        // HAS_EXTENDED path below: placeholders never set HAS_EXTENDED, sixel cells
-        // carry codepoint 0x20). Gate first, then continue.
-        if (this._opts.kittyPlaceholders) {
-          const content = line._data[col * Cell.SIZE + Cell.CONTENT];
-          const cp0 = (content & Content.IS_COMBINED_MASK)
-            ? line.getString(col).codePointAt(0)
-            : (content & Content.CODEPOINT_MASK);
-          if (cp0 === KITTY_PLACEHOLDER) {
-            col = this._renderPlaceholderRun(line, row, col, cols);
-            continue;
-          }
-        }
+        // Kitty placeholders are handled entirely by EmbedOverlay (DOM), not here.
         if (line.getBg(col) & BgFlags.HAS_EXTENDED) {
           let e: IExtendedAttrsImage = line._extendedAttrs[col] || EMPTY_ATTRS;
           const imageId = e.imageId;
@@ -482,22 +480,15 @@ export class ImageStorage implements IDisposable {
     }
   }
 
-  private _ensureCanvas(): boolean {
-    if (this._renderer.canvas) {
-      return true;
-    }
-    this._renderer.insertLayerToDom();
-    return !!this._renderer.canvas;
-  }
-
   /**
-   * Scan the visible viewport for Kitty-placeholder blocks whose image is a VIDEO poster
-   * (spec.videoUrl set), returning each block's on-screen cell extent. Re-derived from the
-   * live buffer on every call, so it is inherently scroll/redraw-safe. VideoOverlay turns
-   * these into positioned <video> players. Blocks whose poster is still loading (no spec yet)
-   * are skipped; they surface on the next scan once the __ccimg fetch resolves.
+   * Scan the visible viewport for Kitty-placeholder blocks and return each as an embed to
+   * materialise (kind + src + full on-screen origin). Re-derived from the live buffer on every
+   * call, so it is inherently scroll/redraw-safe; EmbedOverlay turns these into positioned DOM
+   * elements. An id not yet fetched kicks off its metadata GET and shows up on the next scan.
+   * originRow/Col is the FULL block top-left (reconstructed from a cell's encoded row/col), so a
+   * block scrolled half off the top gets a negative originRow and the overlay clips it correctly.
    */
-  public scanVideoBlocks(): IVideoBlock[] {
+  public scanEmbedBlocks(): IEmbedBlock[] {
     if (!this._opts.kittyPlaceholders) {
       return [];
     }
@@ -505,7 +496,7 @@ export class ImageStorage implements IDisposable {
     const buffer = core.buffer;
     const cols = core.cols;
     const rows = this._terminal.rows;
-    const acc = new Map<number, IVideoBlock>();
+    const acc = new Map<number, IEmbedBlock>();
     for (let row = 0; row < rows; ++row) {
       const line = buffer.lines.get(row + buffer.ydisp) as IBufferLineExt;
       if (!line) continue;
@@ -523,73 +514,19 @@ export class ImageStorage implements IDisposable {
         prev = ph;
         if (!ph) continue;
         const spec = this._phImages.get(ph.id);
-        if (!spec || !spec.videoUrl) continue;
-        const e = acc.get(ph.id);
-        if (!e) {
-          acc.set(ph.id, { id: ph.id, videoUrl: spec.videoUrl, minRow: row, maxRow: row, minCol: col, maxCol: col });
-        } else {
-          if (row < e.minRow) e.minRow = row;
-          if (row > e.maxRow) e.maxRow = row;
-          if (col < e.minCol) e.minCol = col;
-          if (col > e.maxCol) e.maxCol = col;
+        if (!spec) {
+          this._ensureFetch(ph.id);                   // metadata not loaded — fetch, appear next scan
+          continue;
         }
+        if (acc.has(ph.id)) continue;                 // one entry per block; origin from the first cell
+        acc.set(ph.id, {
+          id: ph.id, kind: spec.kind, src: spec.src,
+          gridCols: spec.gridCols, gridRows: spec.gridRows,
+          originRow: row - ph.row, originCol: col - ph.col,   // full top-left; may be off-screen
+        });
       }
     }
     return [...acc.values()];
-  }
-
-  /**
-   * Render (and, if needed, kick off the fetch of) a run of Kitty-placeholder cells
-   * for one image on one line. Returns the last column consumed. Mirrors the sixel
-   * tile-merge idiom but keyed on the decoded (id,row,col) of the surviving characters.
-   */
-  private _renderPlaceholderRun(line: IBufferLineExt, screenRow: number, startCol: number, cols: number): number {
-    const first = decodePlaceholder(line.getString(startCol), line.getFg(startCol), null);
-    if (!first) {
-      return startCol;
-    }
-    const spec = this._phImages.get(first.id);
-    let col = startCol;
-    let count = 1;
-    // Extend the run over every contiguous placeholder cell that belongs to THIS image.
-    // We key ONLY on (codepoint === PLACEHOLDER) and image id — deliberately NOT on a
-    // strictly consecutive (prev.col + 1) diacritic chain. Our emitter always lays a solid
-    // gridCols×gridRows block, so the strict chain buys nothing; worse, if one cell's
-    // combining-mark decode hiccups on a given engine (observed on iOS Safari as the last
-    // ~2 columns dropping out to a "tofu" strip while desktop drew the full width), the
-    // strict check silently truncates every trailing cell. A cell whose fg is default/
-    // inherit (id < 0) stays in the run; a cell carrying a DIFFERENT explicit id ends it.
-    while (++col < cols) {
-      const c = line._data[col * Cell.SIZE + Cell.CONTENT];
-      const cp0 = (c & Content.IS_COMBINED_MASK) ? line.getString(col).codePointAt(0) : (c & Content.CODEPOINT_MASK);
-      if (cp0 !== KITTY_PLACEHOLDER) {
-        break;
-      }
-      const idHere = fgToImageId(line.getFg(col));
-      if (idHere >= 0 && idHere !== first.id) {
-        break;                                        // a different image's run starts here
-      }
-      count++;
-      if (spec && count >= spec.gridCols) {
-        break;                                        // covered the full image width
-      }
-    }
-    col--;
-    if (spec) {
-      if (spec.actual && this._ensureCanvas()) {
-        this._renderer.draw(spec, first.row * spec.gridCols + first.col, startCol, screenRow, count);
-        this._drewThisFrame = true;
-        this._fullyCleared = false;
-      }
-    } else {
-      this._ensureFetch(first.id);
-      if (this._opts.showPlaceholder && this._ensureCanvas()) {
-        this._renderer.drawPlaceholder(startCol, screenRow, count);
-        this._drewThisFrame = true;
-        this._fullyCleared = false;
-      }
-    }
-    return col;
   }
 
   private _ensureFetch(id: number): void {
@@ -605,18 +542,18 @@ export class ImageStorage implements IDisposable {
       if (!r.ok) {
         throw new Error(String(r.status));
       }
-      const gc = parseInt(r.headers.get('X-Image-Cols') || '', 10) || 0;
-      const gr = parseInt(r.headers.get('X-Image-Rows') || '', 10) || 0;
-      const videoUrl = r.headers.get('X-CC-Video-Url') || '';   // set → this poster plays a video
-      const bm = await createImageBitmap(await r.blob());
-      this._pending.delete(id);
-      const spec = this._buildPhSpec(bm, gc, gr);
-      if (videoUrl) {
-        spec.videoUrl = videoUrl;
+      const gc = parseInt(r.headers.get('X-Image-Cols') || '', 10) || 1;
+      const gr = parseInt(r.headers.get('X-Image-Rows') || '', 10) || 1;
+      const kind = (r.headers.get('X-CC-Embed-Kind') || 'img') as IEmbedSpec['kind'];
+      let src = r.headers.get('X-CC-Embed-Url') || '';
+      let objectUrl: string | undefined;
+      if (!src) {                                     // no url → the bytes are in this response body
+        objectUrl = URL.createObjectURL(await r.blob());
+        src = objectUrl;
       }
-      this._phEvictIfNeeded(bm.width * bm.height);
-      this._phImages.set(id, spec);
-      this._phPixels += bm.width * bm.height;
+      this._pending.delete(id);
+      this._evictIfNeeded();
+      this._phImages.set(id, { kind, src, gridCols: gc, gridRows: gr, objectUrl });
       this._scheduleRepaint();
     }).catch(() => {
       this._pending.delete(id);
@@ -624,32 +561,12 @@ export class ImageStorage implements IDisposable {
     });
   }
 
-  private _buildPhSpec(bm: ImageBitmap, gc: number, gr: number): IPlaceholderImageSpec {
-    let cs = this._renderer.cellSize;
-    if (cs.width === -1 || cs.height === -1) {
-      cs = CELL_SIZE_DEFAULT;
-    }
-    if (!gc) {
-      gc = Math.ceil(bm.width / cs.width);            // natural-grid fallback (== addImage geometry)
-    }
-    if (!gr) {
-      gr = Math.ceil(bm.height / cs.height);
-    }
-    const origCellSize = { width: bm.width / gc, height: bm.height / gr };
-    return {
-      orig: bm, actual: bm, origCellSize, actualCellSize: { ...origCellSize },
-      marker: undefined, tileCount: 0, bufferType: 'normal', gridCols: gc, gridRows: gr
-    };
-  }
-
-  private _phEvictIfNeeded(room: number): void {
-    // LRU by Map insertion order; keep total decoded pixels under budget
-    while (this._phPixels + room > this._phPixelLimit && this._phImages.size) {
-      const [id, spec] = this._phImages.entries().next().value as [number, IPlaceholderImageSpec];
+  private _evictIfNeeded(): void {
+    // count LRU by Map insertion order; specs are tiny metadata, but revoke any owned object URL
+    while (this._phImages.size >= PH_MAX) {
+      const [id, spec] = this._phImages.entries().next().value as [number, IEmbedSpec];
       this._phImages.delete(id);
-      const bm = spec.orig as ImageBitmap;
-      this._phPixels -= bm.width * bm.height;
-      bm.close?.();
+      if (spec.objectUrl) URL.revokeObjectURL(spec.objectUrl);
     }
   }
 

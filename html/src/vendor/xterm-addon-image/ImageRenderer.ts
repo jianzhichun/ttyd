@@ -415,7 +415,7 @@ export class ImageRenderer extends Disposable implements IDisposable {
   }
 
   /**
-   * The `.xterm-screen` element the image canvas is appended to. VideoOverlay mounts its
+   * The `.xterm-screen` element the image canvas is appended to. EmbedOverlay mounts its
    * <video> players here too, so they share the canvas's coordinate origin (top-left of
    * the screen) and its CSS-px cell grid — screen (row,col) → (col*cw, row*ch).
    */

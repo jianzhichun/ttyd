@@ -602,55 +602,86 @@ body {
     }
 }
 
-/* ---- inline video: cell-anchored player over a Kitty-placeholder poster ------
-   VideoOverlay (xterm-addon-image) lays one .cc-vid per video block inside
-   .xterm-screen, positioned in CSS px to cover the poster tiles. Transparent so
-   the poster (painted on the image canvas beneath) shows through until tapped;
-   the ▶ badge invites the tap. On tap it swaps in a <video> that plays in place. */
-.cc-vid {
+/* ---- inline embeds: cell-anchored DOM elements over Kitty-placeholder blocks ------
+   EmbedOverlay (xterm-addon-image) lays each embed inside .cc-embed-layer (a clip box
+   filling .xterm-screen). img/video render natively; iframe is a live scaled preview that
+   expands to a page-level modal on tap. The placeholder cells are just position anchors. */
+.cc-embed-layer {
     position: absolute;
+    inset: 0;
+    overflow: hidden; /* clip a block that is partly scrolled past the viewport edge */
+    pointer-events: none; /* only the individual embeds are interactive */
     z-index: 6; /* above the image-layer canvas (auto z), below page-level overlays */
-    display: flex;
-    align-items: center;
-    justify-content: center;
+}
+.cc-embed {
+    position: absolute;
+    top: 0;
+    left: 0; /* positioned via transform: translate() set by JS */
+    transform-origin: top left;
     overflow: hidden;
     pointer-events: auto;
-    cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
-.cc-vid-badge {
-    box-sizing: border-box;
-    width: clamp(28px, 22%, 64px);
-    aspect-ratio: 1 / 1;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.5);
-    border: 2px solid rgba(255, 255, 255, 0.85);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-        background 0.15s ease,
-        transform 0.15s ease;
-    pointer-events: none; /* the whole .cc-vid is the hit target, not just the badge */
-}
-.cc-vid:hover .cc-vid-badge,
-.cc-vid:active .cc-vid-badge {
-    background: rgba(0, 0, 0, 0.72);
-    transform: scale(1.06);
-}
-.cc-vid-tri {
-    width: 0;
-    height: 0;
-    border-style: solid;
-    border-width: 0.42em 0 0.42em 0.7em;
-    border-color: transparent transparent transparent rgba(255, 255, 255, 0.96);
-    margin-left: 0.16em; /* optical centring of the triangle in the circle */
-    font-size: clamp(14px, 3vw, 26px);
-}
-.cc-vid-el {
+.cc-embed-el {
     width: 100%;
     height: 100%;
     object-fit: contain;
-    background: #000;
     display: block;
+    border: 0;
+    background: transparent;
+}
+.cc-embed-video .cc-embed-el {
+    background: #000;
+}
+.cc-embed-img,
+.cc-embed-iframe {
+    cursor: pointer; /* tap to zoom / expand */
+}
+.cc-embed-frame {
+    transform-origin: top left; /* scaled to fit by JS (_fitIframe) */
+    pointer-events: none; /* inline iframe is a preview; the wrap handles the tap */
+    background: #fff;
+}
+/* expand modal: img lightbox / interactive iframe — page-level, above everything */
+.cc-embed-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.82);
+    -webkit-tap-highlight-color: transparent;
+}
+.cc-modal-box {
+    position: relative;
+    width: 92vw;
+    height: 88vh;
+    max-width: 1400px;
+    box-shadow: 0 8px 48px rgba(0, 0, 0, 0.6);
+}
+.cc-modal-el {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #fff;
+    object-fit: contain;
+}
+img.cc-modal-el {
+    background: #111;
+}
+.cc-modal-x {
+    position: absolute;
+    top: -14px;
+    right: -14px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 0;
+    background: #222;
+    color: #fff;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
