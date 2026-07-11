@@ -119,4 +119,7 @@ export interface IImageSpec {
 export interface IPlaceholderImageSpec extends IImageSpec {
   gridCols: number;
   gridRows: number;
+  // Set when this placeholder is a VIDEO poster (X-CC-Video-Url on the __ccimg fetch): the
+  // still is drawn inline, and VideoOverlay plays this URL in place when the block is tapped.
+  videoUrl?: string;
 }

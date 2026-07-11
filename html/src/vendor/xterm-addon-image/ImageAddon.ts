@@ -9,6 +9,7 @@ import { IIPHandler } from './IIPHandler';
 import { ImageRenderer } from './ImageRenderer';
 import { ImageStorage, CELL_SIZE_DEFAULT } from './ImageStorage';
 import { SixelHandler } from './SixelHandler';
+import { VideoOverlay } from './VideoOverlay';
 import { ITerminalExt, IImageAddonOptions, IResetHandler } from './Types';
 
 // default values of addon ctor options
@@ -56,6 +57,7 @@ export class ImageAddon implements ITerminalAddon , IImageApi {
   private _defaultOpts: IImageAddonOptions;
   private _storage: ImageStorage | undefined;
   private _renderer: ImageRenderer | undefined;
+  private _video: VideoOverlay | undefined;
   private _disposables: IDisposable[] = [];
   private _terminal: ITerminalExt | undefined;
   private _handlers: Map<String, IResetHandler> = new Map();
@@ -85,6 +87,8 @@ export class ImageAddon implements ITerminalAddon , IImageApi {
     // internal data structures
     this._renderer = new ImageRenderer(terminal);
     this._storage = new ImageStorage(terminal, this._renderer, this._opts);
+    // cell-anchored inline video players over video-poster placeholders
+    this._video = new VideoOverlay(terminal, this._renderer, this._storage);
 
     // enable size reports
     if (this._opts.enableSizeReports) {
@@ -103,6 +107,7 @@ export class ImageAddon implements ITerminalAddon , IImageApi {
     this._disposeLater(
       this._renderer,
       this._storage,
+      this._video,
 
       // DECSET/DECRST/DA1/XTSMGRAPHICS handlers
       terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, params => this._decset(params)),
@@ -110,8 +115,8 @@ export class ImageAddon implements ITerminalAddon , IImageApi {
       terminal.parser.registerCsiHandler({ final: 'c' }, params => this._da1(params)),
       terminal.parser.registerCsiHandler({ prefix: '?', final: 'S' }, params => this._xtermGraphicsAttributes(params)),
 
-      // render hook
-      terminal.onRender(range => this._storage?.render(range)),
+      // render hook — draw image tiles, then reposition the video overlays over their blocks
+      terminal.onRender(range => { this._storage?.render(range); this._video?.schedule(); }),
 
       /**
        * reset handlers covered:

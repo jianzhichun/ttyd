@@ -413,4 +413,19 @@ export class ImageRenderer extends Disposable implements IDisposable {
   public get document(): Document | undefined {
     return this._terminal._core._coreBrowserService?.window.document;
   }
+
+  /**
+   * The `.xterm-screen` element the image canvas is appended to. VideoOverlay mounts its
+   * <video> players here too, so they share the canvas's coordinate origin (top-left of
+   * the screen) and its CSS-px cell grid — screen (row,col) → (col*cw, row*ch).
+   */
+  public get screenElement(): HTMLElement | undefined {
+    return this._terminal._core.screenElement || undefined;
+  }
+
+  /** Cell size in CSS px (what DOM overlays position with), or undefined if metrics aren't ready. */
+  public get cssCellSize(): ICellSize | undefined {
+    const cell = this.dimensions?.css.cell;
+    return cell && cell.width > 0 && cell.height > 0 ? { width: cell.width, height: cell.height } : undefined;
+  }
 }

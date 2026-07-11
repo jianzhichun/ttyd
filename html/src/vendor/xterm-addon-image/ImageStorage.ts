@@ -6,7 +6,16 @@
 import { IDisposable } from '@xterm/xterm';
 import { ImageRenderer } from './ImageRenderer';
 import { ITerminalExt, IExtendedAttrsImage, IImageAddonOptions, IImageSpec, IPlaceholderImageSpec, IBufferLineExt, BgFlags, Cell, Content, ICellSize, ExtFlags, Attributes, UnderlineStyle } from './Types';
-import { KITTY_PLACEHOLDER, decodePlaceholder, fgToImageId } from './KittyPlaceholder';
+import { KITTY_PLACEHOLDER, decodePlaceholder, fgToImageId, IPH } from './KittyPlaceholder';
+
+export interface IVideoBlock {
+  id: number;
+  videoUrl: string;
+  minRow: number;   // on-screen cell extent (0..rows-1)
+  maxRow: number;
+  minCol: number;
+  maxCol: number;
+}
 
 
 // fallback default cell size
@@ -482,6 +491,54 @@ export class ImageStorage implements IDisposable {
   }
 
   /**
+   * Scan the visible viewport for Kitty-placeholder blocks whose image is a VIDEO poster
+   * (spec.videoUrl set), returning each block's on-screen cell extent. Re-derived from the
+   * live buffer on every call, so it is inherently scroll/redraw-safe. VideoOverlay turns
+   * these into positioned <video> players. Blocks whose poster is still loading (no spec yet)
+   * are skipped; they surface on the next scan once the __ccimg fetch resolves.
+   */
+  public scanVideoBlocks(): IVideoBlock[] {
+    if (!this._opts.kittyPlaceholders) {
+      return [];
+    }
+    const core = this._terminal._core;
+    const buffer = core.buffer;
+    const cols = core.cols;
+    const rows = this._terminal.rows;
+    const acc = new Map<number, IVideoBlock>();
+    for (let row = 0; row < rows; ++row) {
+      const line = buffer.lines.get(row + buffer.ydisp) as IBufferLineExt;
+      if (!line) continue;
+      let prev: IPH | null = null;
+      for (let col = 0; col < cols; ++col) {
+        const content = line._data[col * Cell.SIZE + Cell.CONTENT];
+        const cp0 = (content & Content.IS_COMBINED_MASK)
+          ? line.getString(col).codePointAt(0)
+          : (content & Content.CODEPOINT_MASK);
+        if (cp0 !== KITTY_PLACEHOLDER) {
+          prev = null;
+          continue;
+        }
+        const ph = decodePlaceholder(line.getString(col), line.getFg(col), prev);
+        prev = ph;
+        if (!ph) continue;
+        const spec = this._phImages.get(ph.id);
+        if (!spec || !spec.videoUrl) continue;
+        const e = acc.get(ph.id);
+        if (!e) {
+          acc.set(ph.id, { id: ph.id, videoUrl: spec.videoUrl, minRow: row, maxRow: row, minCol: col, maxCol: col });
+        } else {
+          if (row < e.minRow) e.minRow = row;
+          if (row > e.maxRow) e.maxRow = row;
+          if (col < e.minCol) e.minCol = col;
+          if (col > e.maxCol) e.maxCol = col;
+        }
+      }
+    }
+    return [...acc.values()];
+  }
+
+  /**
    * Render (and, if needed, kick off the fetch of) a run of Kitty-placeholder cells
    * for one image on one line. Returns the last column consumed. Mirrors the sixel
    * tile-merge idiom but keyed on the decoded (id,row,col) of the surviving characters.
@@ -550,9 +607,13 @@ export class ImageStorage implements IDisposable {
       }
       const gc = parseInt(r.headers.get('X-Image-Cols') || '', 10) || 0;
       const gr = parseInt(r.headers.get('X-Image-Rows') || '', 10) || 0;
+      const videoUrl = r.headers.get('X-CC-Video-Url') || '';   // set → this poster plays a video
       const bm = await createImageBitmap(await r.blob());
       this._pending.delete(id);
       const spec = this._buildPhSpec(bm, gc, gr);
+      if (videoUrl) {
+        spec.videoUrl = videoUrl;
+      }
       this._phEvictIfNeeded(bm.width * bm.height);
       this._phImages.set(id, spec);
       this._phPixels += bm.width * bm.height;
