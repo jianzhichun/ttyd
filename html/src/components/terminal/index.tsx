@@ -19,6 +19,9 @@ interface State {
     armed: '' | Mod;
     upload: string; // toast text while uploading ('' = hidden)
     uploadPct: number; // 0-100 for the progress bar
+    // Fallback "paste" button (null = hidden). Shown at the finger when reading the
+    // clipboard straight from the long-press is refused — see onEnd's NotAllowedError path.
+    pasteBtn: { x: number; y: number } | null;
 }
 
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024; // keep in sync with server MAX_BYTES (2 GB)
@@ -68,6 +71,7 @@ export class Terminal extends Component<Props, State> {
         armed: '',
         upload: '',
         uploadPct: 0,
+        pasteBtn: null,
     };
     private uploadQueue: Blob[] = [];
     private uploading = false;
@@ -103,7 +107,7 @@ export class Terminal extends Component<Props, State> {
         this.xterm.dispose();
     }
 
-    render({ id }: Props, { modal, armed, upload, uploadPct }: State) {
+    render({ id }: Props, { modal, armed, upload, uploadPct, pasteBtn }: State) {
         return (
             <div id="terminal-root" ref={c => (this.root = c as HTMLElement)}>
                 {/* Transient overlays (all portals to <body>) are wrapped in one
@@ -119,6 +123,20 @@ export class Terminal extends Component<Props, State> {
                                 <div class="upload-track">
                                     <div class="upload-fill" style={`width:${uploadPct}%`} />
                                 </div>
+                            </div>,
+                            document.body
+                        )}
+                    {pasteBtn &&
+                        createPortal(
+                            <div class="paste-backdrop" onClick={this.closePasteBtn}>
+                                <button
+                                    type="button"
+                                    class="paste-btn"
+                                    style={`left:${pasteBtn.x}px;top:${pasteBtn.y}px`}
+                                    onClick={this.doPaste}
+                                >
+                                    粘贴
+                                </button>
                             </div>,
                             document.body
                         )}
@@ -799,6 +817,7 @@ export class Terminal extends Component<Props, State> {
                     this.flashToast('粘贴不可用: 无 clipboard.readText');
                     return;
                 }
+                const at = e.changedTouches[0];
                 navigator.clipboard
                     .readText()
                     .then(t => {
@@ -806,10 +825,17 @@ export class Terminal extends Component<Props, State> {
                         else this.flashToast('剪贴板为空');
                     })
                     .catch(err => {
-                        // Surface it. iOS Safari gates readText() behind a system "Paste"
-                        // confirmation bubble even inside a user gesture, and swallowing the
-                        // rejection here turns a paste that silently does nothing into a black
-                        // box — which is exactly what it was.
+                        // NotAllowedError = Safari says there is no user activation. That
+                        // happens once the keyboard is up: xterm parks its helper-textarea at
+                        // the cursor (for IME candidate placement) and it is the ONE element
+                        // forced back to `user-select: text`, so a long press there is claimed
+                        // by iOS's own gesture — which eats the activation before touchend.
+                        // Can't retry our way out of that; the activation is genuinely gone.
+                        // Fall back to an explicit tap, which mints a fresh one Safari honours.
+                        if (err && err.name === 'NotAllowedError' && at) {
+                            this.setState({ pasteBtn: { x: at.clientX, y: at.clientY } });
+                            return;
+                        }
                         this.flashToast(`粘贴失败: ${(err && err.name) || err}`);
                     });
                 return;
@@ -1039,6 +1065,26 @@ export class Terminal extends Component<Props, State> {
     private sendClick(clientX: number, clientY: number) {
         this.sendMouse(0, clientX, clientY, true);
         this.sendMouse(0, clientX, clientY, false);
+    }
+
+    @bind
+    private closePasteBtn() {
+        if (this.state.pasteBtn) this.setState({ pasteBtn: null });
+    }
+
+    // The fallback paste. A click IS a user activation in its own right, so readText() is
+    // honoured here even though it was refused straight out of the long press.
+    @bind
+    private async doPaste(e: MouseEvent) {
+        e.stopPropagation();
+        this.setState({ pasteBtn: null });
+        try {
+            const t = await navigator.clipboard.readText();
+            if (t) this.xterm.sendData(t);
+            else this.flashToast('剪贴板为空');
+        } catch (err) {
+            this.flashToast(`粘贴失败: ${(err as Error)?.name || err}`);
+        }
     }
 
     // The word under a cell. A long press with no drag copies this — long-pressing a word to

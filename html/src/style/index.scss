@@ -594,3 +594,33 @@ img.cc-modal-el {
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
+
+// Fallback paste button (terminal/index.tsx). Shown at the finger when reading the
+// clipboard directly out of the long press is refused — which is what iOS does once the
+// keyboard is up, because the long press lands on xterm's focused helper-textarea and iOS
+// claims the gesture, consuming the user activation. A click mints a fresh one.
+.paste-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+}
+
+.paste-btn {
+    position: fixed;
+    transform: translate(-50%, -140%); // sit above the finger, not under it
+    padding: 10px 22px;
+    border: 1px solid #555;
+    border-radius: 8px;
+    background: #3a3a3a;
+    color: #e6e6e6;
+    font-size: 15px;
+    font-family: inherit;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 45%);
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+}
+
+.paste-btn:active {
+    background: #00a7aa;
+    color: #04120c;
+}
