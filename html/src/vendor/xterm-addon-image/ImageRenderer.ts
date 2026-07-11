@@ -393,8 +393,11 @@ export class ImageRenderer extends Disposable implements IDisposable {
     }
     ctx.putImageData(imgData, 0, 0);
 
-    // create placeholder line, width aligned to blueprint width
-    const width = (screen.width + bWidth - 1) & ~(bWidth - 1) || PLACEHOLDER_LENGTH;
+    // create placeholder line, width aligned to blueprint width. DEVICE px: drawPlaceholder
+    // indexes the source at col*deviceCellWidth, so this tiled line must span the device
+    // canvas width — CSS screen.width leaves the right of a HiDPI terminal off-canvas.
+    const devW = this.dimensions?.device.canvas.width || (screen.width * (globalThis.devicePixelRatio || 1));
+    const width = (Math.ceil(devW) + bWidth - 1) & ~(bWidth - 1) || PLACEHOLDER_LENGTH;
     this._placeholder = ImageRenderer.createCanvas(this.document, width, height);
     const ctx2 = this._placeholder.getContext('2d', { alpha: false });
     if (!ctx2) {

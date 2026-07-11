@@ -44,10 +44,20 @@ function isValidUrl(uri: string): boolean {
 function mapStrIdx(terminal: Terminal, lineIndex: number, startCol: number, stringIndex: number): [number, number] {
     const buf = terminal.buffer.active;
     const cell = buf.getNullCell();
+    const firstLine = lineIndex;
     let col = startCol;
     while (stringIndex) {
         const line = buf.getLine(lineIndex);
         if (!line) return [-1, -1];
+        // getWindowedLineStrings stripped continuation rows' leading indent out of the joined
+        // string, so skip the same leading blank cells here or stringIndex→cell drifts.
+        if (lineIndex !== firstLine && col === 0) {
+            for (; col < line.length; ++col) {
+                line.getCell(col, cell);
+                const ch = cell.getChars();
+                if (ch !== '' && ch !== ' ' && ch !== '\t') break;
+            }
+        }
         for (let i = col; i < line.length; ++i) {
             line.getCell(i, cell);
             const chars = cell.getChars();
@@ -78,12 +88,6 @@ function rowContentLen(line: IBufferLine, cols: number, cell: IBufferCell): numb
     return 0;
 }
 
-function startsNonSpace(line: IBufferLine, cell: IBufferCell): boolean {
-    line.getCell(0, cell);
-    const ch = cell.getChars();
-    return ch !== '' && ch !== ' ';
-}
-
 // TUIs (Ink / Claude Code) often wrap one column EARLY — they avoid writing the
 // last cell so the terminal's own autowrap never fires — so a hard-wrapped row's
 // content can stop at cols-1 with the last cell blank. Tolerate that gap.
@@ -100,7 +104,12 @@ function continuesDown(terminal: Terminal, idx: number, cell: IBufferCell): bool
     const cur = buf.getLine(idx);
     if (!cur) return false;
     const len = rowContentLen(cur, terminal.cols, cell);
-    return len > 0 && len >= terminal.cols - EDGE_SLACK && startsNonSpace(next, cell);
+    // Hard wrap: the current row runs (near) to the edge AND the next row has content. We
+    // test content-not-blank instead of starts-NON-space so an INDENTED continuation row is
+    // still stitched — Claude Code indents wrapped continuation rows, and the old
+    // startsNonSpace gate stopped there, capturing a wrapped URL only up to the wrap column.
+    // getWindowedLineStrings strips that indent on join; mapStrIdx skips the matching cells.
+    return len > 0 && len >= terminal.cols - EDGE_SLACK && rowContentLen(next, terminal.cols, cell) > 0;
 }
 
 // Build the logical (possibly multi-row) line containing `lineIndex` and the index
@@ -118,7 +127,11 @@ function getWindowedLineStrings(terminal: Terminal, lineIndex: number): [string[
     const strings: string[] = [];
     for (let i = top; i <= bottom; i++) {
         const line = buf.getLine(i);
-        strings.push(line ? line.translateToString(true) : '');
+        const s = line ? line.translateToString(true) : '';
+        // Continuation rows carry the message's left indent; strip it so it doesn't land
+        // mid-URL and truncate the match. mapStrIdx skips the same leading blanks to keep
+        // cell ranges aligned. (The first/anchor row keeps its indent — the URL is inside it.)
+        strings.push(i === top ? s : s.replace(/^[ \t]+/, ''));
     }
     return [strings, top];
 }

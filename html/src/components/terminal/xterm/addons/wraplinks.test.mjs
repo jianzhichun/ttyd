@@ -83,4 +83,15 @@ function check(name, cond) {
     check('1-col-early: continuation row yields same full link', b.length === 1 && b[0].text === full);
 }
 
+// Case 6 (H1): INDENTED hard-wrapped continuation — Claude Code indents wrapped rows. The
+// URL must come back WHOLE (not truncated at the wrap) with a correct 2-row range.
+{
+    const t = makeTerminal([{ text: '  https://exampl.co/', wrapped: false }, { text: '  foo/bar', wrapped: false }], 20);
+    const full = 'https://exampl.co/foo/bar';
+    const a = computeLinks(t, 1, noop);
+    check('indented continuation: full link, not truncated', a.length === 1 && a[0].text === full);
+    check('indented continuation: spans rows 1..2', a[0].range.start.y === 1 && a[0].range.end.y === 2);
+    check('indented continuation: start.x at the URL col (3, 1-based)', a[0].range.start.x === 3);
+}
+
 console.log(`\n${passed} checks passed`);

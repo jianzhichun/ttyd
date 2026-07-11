@@ -808,7 +808,9 @@ export class Terminal extends Component<Props, State> {
             // A tap that lands on a link opens it (mobile has no other way — the click that
             // would fire xterm's own link activation is swallowed), and does NOT also send a
             // tmux click, so tapping a link never moves the pane selection under it.
-            const link = this.linkAt(t.clientX, t.clientY);
+            // A tap on a link opens it — EXCEPT inside CC's input box, where a URL you typed
+            // must still move the caret / summon the keyboard, not launch a browser tab.
+            const link = !this.inInputZone(t.clientY) && this.linkAt(t.clientX, t.clientY);
             if (link) {
                 openLink(e as unknown as MouseEvent, link.text);
                 this.tapRipple(t.clientX, t.clientY);
