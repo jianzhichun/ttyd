@@ -43,8 +43,8 @@ body {
     flex: 1 1 auto;
     min-height: 0;
     will-change: transform;
-    // Main tap surface: opt out of the iOS double-tap-to-zoom gesture (keybar / ctxmenu
-    // / capview already do). Our own touch handler owns taps and swipes here.
+    // Main tap surface: opt out of the iOS double-tap-to-zoom gesture (the keybar does
+    // too). Our own touch handler owns taps and swipes here.
     touch-action: manipulation;
     // NB: in the #terminal-root flex column, auto left/right margins would
     // defeat align-items:stretch and shrink-wrap the terminal (PC side gutters).
@@ -368,97 +368,6 @@ body {
     color: #b0b0b0;
     white-space: pre-wrap;
     word-break: break-word;
-}
-
-// Long-press context menu (terminal/index.tsx). Matches the keybar palette:
-// dark cells (#3a3a3a / #555 border), teal (#00a7aa) on press.
-.ctxmenu-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 50;
-}
-.ctxmenu {
-    position: fixed;
-    min-width: 176px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 6px;
-    background: rgba(28, 28, 28, 0.97);
-    border: 1px solid #555;
-    border-radius: 10px;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
-}
-.ctxmenu-item {
-    text-align: left;
-    padding: 11px 14px;
-    font-size: 15px;
-    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-    color: #d2d2d2;
-    background: #3a3a3a;
-    border: 1px solid #555;
-    border-radius: 6px;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-}
-.ctxmenu-item:active {
-    color: #001b1b;
-    background: #00a7aa;
-    border-color: #00a7aa;
-}
-
-// In-app capture overlay (terminal/index.tsx). Reuses .mt-preview backdrop +
-// .mt-x close button (media tray) for consistency; .capview is the text card.
-.capview {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    max-width: 900px;
-    max-height: 100%;
-    min-height: 0;
-    background: rgba(24, 24, 24, 0.98);
-    border: 1px solid #555;
-    border-radius: 10px;
-    overflow: hidden;
-}
-.capview-bar {
-    flex: 0 0 auto;
-    display: flex;
-    padding: 8px;
-    border-bottom: 1px solid #3a3a3a;
-}
-.capview-copy {
-    padding: 9px 16px;
-    font-size: 14px;
-    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-    color: #d2d2d2;
-    background: #3a3a3a;
-    border: 1px solid #555;
-    border-radius: 6px;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-}
-.capview-copy:active {
-    color: #001b1b;
-    background: #00a7aa;
-    border-color: #00a7aa;
-}
-.capview-text {
-    flex: 1 1 auto;
-    min-height: 0; // let overflow:auto actually scroll inside the flex column
-    margin: 0;
-    padding: 12px;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch; // momentum scroll on iOS
-    overscroll-behavior: contain; // don't chain the scroll to the page
-    white-space: pre-wrap;
-    word-break: break-word;
-    -webkit-user-select: text;
-    user-select: text;
-    font-size: 13px;
-    line-height: 1.4;
-    color: #e6e6e6;
-    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
 }
 
 // Slide-to-verify ("拖拽验证码") style charge-up hint for the swipe -> switch-window

@@ -8,7 +8,7 @@ import { Modal } from '../modal';
 import { KeyBar, Mod } from '../keybar';
 import { NotifyTray } from '../media/notify-tray';
 import { computeLinks, openLink } from './xterm/addons/wraplinks';
-import type { ILink } from '@xterm/xterm';
+import type { ILink, ILinkProvider } from '@xterm/xterm';
 
 interface Props extends XtermOptions {
     id: string;
@@ -19,9 +19,6 @@ interface State {
     armed: '' | Mod;
     upload: string; // toast text while uploading ('' = hidden)
     uploadPct: number; // 0-100 for the progress bar
-    menu: { x: number; y: number } | null; // long-press context menu (null = hidden)
-    capture: string | null; // in-app capture overlay text (null = hidden)
-    capCopied: boolean; // "copy all" feedback in the capture overlay
 }
 
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024; // keep in sync with server MAX_BYTES (2 GB)
@@ -71,9 +68,6 @@ export class Terminal extends Component<Props, State> {
         armed: '',
         upload: '',
         uploadPct: 0,
-        menu: null,
-        capture: null,
-        capCopied: false,
     };
     private uploadQueue: Blob[] = [];
     private uploading = false;
@@ -109,7 +103,7 @@ export class Terminal extends Component<Props, State> {
         this.xterm.dispose();
     }
 
-    render({ id }: Props, { modal, armed, upload, uploadPct, menu, capture, capCopied }: State) {
+    render({ id }: Props, { modal, armed, upload, uploadPct }: State) {
         return (
             <div id="terminal-root" ref={c => (this.root = c as HTMLElement)}>
                 {/* Transient overlays (all portals to <body>) are wrapped in one
@@ -124,44 +118,6 @@ export class Terminal extends Component<Props, State> {
                                 <div class="upload-msg">{upload}</div>
                                 <div class="upload-track">
                                     <div class="upload-fill" style={`width:${uploadPct}%`} />
-                                </div>
-                            </div>,
-                            document.body
-                        )}
-                    {menu &&
-                        createPortal(
-                            <div class="ctxmenu-backdrop" onClick={this.closeMenu}>
-                                <div
-                                    class="ctxmenu"
-                                    style={`left:${menu.x}px;top:${menu.y}px`}
-                                    onClick={e => e.stopPropagation()}
-                                >
-                                    <button type="button" class="ctxmenu-item" onClick={this.menuCapture}>
-                                        抓取并复制
-                                    </button>
-                                    <button type="button" class="ctxmenu-item" onClick={this.menuPaste}>
-                                        粘贴
-                                    </button>
-                                    <button type="button" class="ctxmenu-item" onClick={this.menuCopyVisible}>
-                                        复制可见屏
-                                    </button>
-                                </div>
-                            </div>,
-                            document.body
-                        )}
-                    {capture !== null &&
-                        createPortal(
-                            <div class="mt-preview" onClick={this.closeCapture}>
-                                <button class="mt-x" type="button" onClick={this.closeCapture} aria-label="close">
-                                    ×
-                                </button>
-                                <div class="capview" onClick={e => e.stopPropagation()}>
-                                    <div class="capview-bar">
-                                        <button type="button" class="capview-copy" onClick={this.copyCapture}>
-                                            {capCopied ? '已复制' : '复制全部'}
-                                        </button>
-                                    </div>
-                                    <pre class="capview-text">{capture}</pre>
                                 </div>
                             </div>,
                             document.body
@@ -657,15 +613,6 @@ export class Terminal extends Component<Props, State> {
         let single = false;
         let scrolled = false;
         let swiped = false; // fired a window switch this gesture (one per swipe)
-        let lpTimer = 0; // long-press timer (0 = inactive)
-        let longPressed = false; // set once the menu has popped, so onEnd skips the tap
-
-        const cancelLP = () => {
-            if (lpTimer) {
-                clearTimeout(lpTimer);
-                lpTimer = 0;
-            }
-        };
 
         // Wheel notches are coalesced per animation frame and sent as ONE batched
         // sequence, so a fast swipe doesn't flood the app with dozens of separate
@@ -739,27 +686,13 @@ export class Terminal extends Component<Props, State> {
             vY = 0;
             scrolled = false;
             swiped = false;
-            longPressed = false;
-            cancelLP();
-            if (single) {
-                // Hold still ~480ms -> pop the long-press context menu at the finger.
-                lpTimer = window.setTimeout(() => {
-                    lpTimer = 0;
-                    longPressed = true;
-                    (navigator as Navigator & { vibrate?: (n: number) => void }).vibrate?.(8);
-                    this.openMenu(sx, sy);
-                }, 480);
-            }
         };
         const onMove = (e: TouchEvent) => {
             if (!single || e.touches.length !== 1) return;
-            if (longPressed) return; // menu is open — ignore further movement
             const x = e.touches[0].clientX;
             const y = e.touches[0].clientY;
             const dx = x - sx;
             const dy = y - sy;
-            // any real movement cancels the pending long-press (it's a scroll/swipe)
-            if (lpTimer && Math.abs(dx) + Math.abs(dy) > 10) cancelLP();
             // horizontal-dominant -> window switch, with the charge-up hint
             if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 12) {
                 scrolled = true; // not a tap
@@ -791,12 +724,7 @@ export class Terminal extends Component<Props, State> {
             }
         };
         const onEnd = (e: TouchEvent) => {
-            cancelLP();
             this.hideSwipe();
-            if (longPressed) {
-                longPressed = false;
-                return; // the menu already popped; don't also tap/click
-            }
             if (swiped) {
                 swiped = false;
                 return; // horizontal swipe already handled during the move
@@ -856,7 +784,6 @@ export class Terminal extends Component<Props, State> {
         const mouseTypes = ['mousedown', 'mousemove', 'mouseup', 'click', 'dblclick'];
         mouseTypes.forEach(type => el.addEventListener(type, swallowMouse, true));
         this.disposeTap = () => {
-            cancelLP();
             stopMomentum();
             if (wheelRaf) cancelAnimationFrame(wheelRaf);
             el.removeEventListener('touchstart', onStart);
@@ -865,87 +792,6 @@ export class Terminal extends Component<Props, State> {
             el.removeEventListener('contextmenu', onCtx);
             mouseTypes.forEach(type => el.removeEventListener(type, swallowMouse, true));
         };
-    }
-
-    // ---- long-press context menu (copy / paste / capture) ---------------------
-    private openMenu(x: number, y: number) {
-        const W = 192;
-        const H = 156;
-        const cx = Math.min(Math.max(8, x), window.innerWidth - W - 8);
-        const cy = Math.min(Math.max(8, y), window.innerHeight - H - 8);
-        this.setState({ menu: { x: cx, y: cy } });
-    }
-
-    @bind
-    private closeMenu() {
-        if (this.state.menu) this.setState({ menu: null });
-    }
-
-    // Fetch the active pane's text from the same-origin __cccapture endpoint and
-    // show it in an in-app overlay (like the media tray preview) — selectable for
-    // native long-press copy, plus a one-tap "copy all".
-    @bind
-    private async menuCapture() {
-        this.closeMenu();
-        this.setState({ capture: '抓取中…', capCopied: false });
-        try {
-            const url = new URL('__cccapture?format=text', window.location.href).href;
-            const r = await fetch(url, { cache: 'no-store' });
-            this.setState({ capture: r.ok ? await r.text() : '抓取失败' });
-        } catch {
-            this.setState({ capture: '抓取失败：端点不可达' });
-        }
-    }
-
-    @bind
-    private closeCapture() {
-        this.setState({ capture: null, capCopied: false });
-    }
-
-    @bind
-    private async copyCapture() {
-        try {
-            await navigator.clipboard.writeText(this.state.capture || '');
-            this.setState({ capCopied: true });
-        } catch {
-            /* writeText blocked — leave the text selectable for manual copy */
-        }
-    }
-
-    // Paste OS clipboard text into the terminal (readText needs a user gesture —
-    // this button tap is one).
-    @bind
-    private async menuPaste() {
-        this.closeMenu();
-        try {
-            const t = await navigator.clipboard.readText();
-            if (t) this.xterm.sendData(t);
-        } catch {
-            /* clipboard read blocked/denied — no-op */
-        }
-    }
-
-    // Copy the visible screen straight to the clipboard (no page hop).
-    @bind
-    private async menuCopyVisible() {
-        this.closeMenu();
-        try {
-            await navigator.clipboard.writeText(this.visibleText());
-        } catch {
-            /* writeText blocked — no-op */
-        }
-    }
-
-    private visibleText(): string {
-        const term = window.term;
-        if (!term) return '';
-        const buf = term.buffer.active;
-        const out: string[] = [];
-        for (let i = 0; i < term.rows; i++) {
-            const line = buf.getLine(buf.viewportY + i);
-            out.push(line ? line.translateToString(true) : '');
-        }
-        return out.join('\n').replace(/\s+$/, '');
     }
 
     // Desktop (Mac trackpad) two-finger horizontal swipe -> switch tmux window,
@@ -1063,12 +909,52 @@ export class Terminal extends Component<Props, State> {
         if (rect.width <= 0 || rect.height <= 0) return null;
         const col = Math.min(Math.max(Math.floor((clientX - rect.left) / (rect.width / term.cols)) + 1, 1), term.cols);
         const row = Math.min(Math.max(Math.floor((clientY - rect.top) / (rect.height / term.rows)) + 1, 1), term.rows);
+
+        // An OSC 8 hyperlink carries its URI OUT OF BAND (the target never appears in the
+        // rendered text), so computeLinks — which scans text — is structurally blind to it.
+        // Claude Code emits every markdown link that way, which is why tapping one did
+        // nothing. xterm's own built-in OscLinkProvider CAN see them, so ask the providers
+        // xterm has registered rather than only our own. Their `text` is already the URI, so
+        // the caller's openLink(e, link.text) works unchanged for both kinds.
+        const hit = this.providerLinkAt(term, row, col);
+        if (hit) return hit;
+
+        // Fall back to the text scan directly, so a future xterm that moves this internal
+        // field degrades to "bare URLs still tappable" instead of "nothing is tappable".
         let links: ILink[];
         try {
             links = computeLinks(term, row, openLink);
         } catch {
             return null;
         }
+        return this.pick(links, row, col);
+    }
+
+    // Ask every link provider xterm knows about (built-in OSC 8 + our wrapped-URL one).
+    // `_linkProviderService` is internal, hence the guards: any surprise here just means we
+    // fall back to the text scan above.
+    private providerLinkAt(term: typeof window.term, row: number, col: number): ILink | null {
+        const core = (term as unknown as { _core?: { _linkProviderService?: { linkProviders?: ILinkProvider[] } } })
+            ._core;
+        const providers = core?._linkProviderService?.linkProviders;
+        if (!Array.isArray(providers)) return null;
+        let hit: ILink | null = null;
+        for (const p of providers) {
+            try {
+                // The built-in providers resolve synchronously, so the callback has already
+                // run by the time provideLinks() returns.
+                p.provideLinks(row, links => {
+                    if (!hit && links) hit = this.pick(links, row, col);
+                });
+            } catch {
+                /* a bad provider must not take the tap down with it */
+            }
+            if (hit) return hit;
+        }
+        return null;
+    }
+
+    private pick(links: ILink[], row: number, col: number): ILink | null {
         for (const l of links) {
             const { start, end } = l.range;
             const afterStart = row > start.y || (row === start.y && col >= start.x);
