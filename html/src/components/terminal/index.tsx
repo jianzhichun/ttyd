@@ -708,7 +708,12 @@ export class Terminal extends Component<Props, State> {
                 //   input box   -> paste
                 lpTimer = window.setTimeout(() => {
                     lpTimer = 0;
+                    // Feedback FIRST, and it must be visual: navigator.vibrate does not
+                    // exist on iOS, so a haptic-only cue means the long press appears to do
+                    // nothing at all until you happen to drag. The ripple is the only cue an
+                    // iPhone actually gets.
                     (navigator as Navigator & { vibrate?: (n: number) => void }).vibrate?.(8);
+                    this.tapRipple(sx, sy);
                     if (this.inInputZone(sy)) {
                         // NOT pasting here: clipboard.readText() needs a transient user
                         // activation, and a setTimeout callback has none. Defer to touchend,
@@ -718,7 +723,15 @@ export class Terminal extends Component<Props, State> {
                     }
                     selecting = true;
                     anchor = this.cellAt(sx, sy);
-                    this.sendMouse(0, sx, sy, true); // press -> tmux marks the anchor
+                    // Press only — deliberately NOT a zero-distance drag to force the
+                    // highlight up early. That would put tmux into copy-mode, and on release
+                    // tmux would then copy a selection of its own and blow away, via OSC 52,
+                    // the text we put on the clipboard inside the gesture — with a different
+                    // anchor, so the two disagree. Staying out of copy-mode until the finger
+                    // actually moves keeps exactly one writer of the clipboard per outcome:
+                    //   no drag -> tmux never copies; we copy the word.
+                    //   drag    -> tmux copies the same range we do; agreeing overwrite.
+                    this.sendMouse(0, sx, sy, true);
                 }, 480);
             }
         };
@@ -795,7 +808,10 @@ export class Terminal extends Component<Props, State> {
                 // user activation has expired, and iOS Safari refuses writeText() without
                 // one. Doing it here keeps us inside the gesture. tmux still gets the
                 // release below, so it exits copy-mode and clears its highlight as usual.
-                const text = anchor && head ? this.textBetween(anchor, head) : '';
+                // Long press with no drag = "copy this word" (the phone-native meaning of
+                // long-pressing text). Only an actual drag means "copy this range".
+                const moved = !!anchor && !!head && (anchor.col !== head.col || anchor.row !== head.row);
+                const text = moved ? this.textBetween(anchor!, head!) : anchor ? this.wordAt(anchor) : '';
                 if (text) {
                     navigator.clipboard.writeText(text).catch(() => {
                         /* denied — the OSC 52 path may still land on desktop */
@@ -844,12 +860,28 @@ export class Terminal extends Component<Props, State> {
             this.tapRipple(t.clientX, t.clientY);
             if (this.inInputZone(t.clientY)) window.term?.focus();
         };
+        // iOS hands the touch back with touchcancel when a system gesture takes over. Without
+        // this we'd never see the end of the gesture: the long-press timer would still fire,
+        // `selecting` would stay latched, and tmux would sit in copy-mode with the button
+        // "held" forever. Release it and reset.
+        const onCancel = () => {
+            cancelLP();
+            this.hideSwipe();
+            if (selecting) {
+                selecting = false;
+                this.sendMouse(0, sx, sy, false); // let tmux finish the drag it thinks is live
+            }
+            anchor = null;
+            pendingPaste = false;
+        };
+
         // Suppress the browser's own long-press callout/context menu on the canvas.
         const onCtx = (e: Event) => e.preventDefault();
 
         el.addEventListener('touchstart', onStart, { passive: true });
         el.addEventListener('touchmove', onMove, { passive: true });
         el.addEventListener('touchend', onEnd, { passive: true });
+        el.addEventListener('touchcancel', onCancel, { passive: true });
         el.addEventListener('contextmenu', onCtx);
         // Swallow the browser's synthesized mouse events from touches: xterm would
         // otherwise focus the textarea on the touch-START mousedown — popping the
@@ -870,6 +902,7 @@ export class Terminal extends Component<Props, State> {
             el.removeEventListener('touchstart', onStart);
             el.removeEventListener('touchmove', onMove);
             el.removeEventListener('touchend', onEnd);
+            el.removeEventListener('touchcancel', onCancel);
             el.removeEventListener('contextmenu', onCtx);
             mouseTypes.forEach(type => el.removeEventListener(type, swallowMouse, true));
         };
@@ -989,6 +1022,24 @@ export class Terminal extends Component<Props, State> {
     private sendClick(clientX: number, clientY: number) {
         this.sendMouse(0, clientX, clientY, true);
         this.sendMouse(0, clientX, clientY, false);
+    }
+
+    // The word under a cell. A long press with no drag copies this — long-pressing a word to
+    // grab it is what a phone user expects, and a 1-character selection would be useless.
+    // Splits on whitespace, which is close enough to tmux's word-separators for a copy.
+    private wordAt(cell: { col: number; row: number }): string {
+        const term = window.term;
+        if (!term) return '';
+        const line = term.buffer.active.getLine(term.buffer.active.viewportY + cell.row - 1);
+        if (!line) return '';
+        const s = line.translateToString(true);
+        const i = cell.col - 1;
+        if (i < 0 || i >= s.length || /\s/.test(s[i])) return '';
+        let a = i;
+        let b = i;
+        while (a > 0 && !/\s/.test(s[a - 1])) a--;
+        while (b < s.length - 1 && !/\s/.test(s[b + 1])) b++;
+        return s.slice(a, b + 1);
     }
 
     // Text between two cells (inclusive), read straight from xterm's buffer. Used to put a
