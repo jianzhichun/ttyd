@@ -151,7 +151,9 @@ export class EmbedOverlay implements IDisposable {
       f.className = 'cc-embed-el cc-embed-frame';
       f.src = b.src;
       f.setAttribute('scrolling', 'no');
-      f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms');
+      // No sandbox: the sidecar only ever hands us same-origin *.internal URLs (our own served
+      // files), and cross-origin policy already blocks a framed page from touching this parent.
+      // A sandbox would also break Chrome's built-in PDF viewer (blocked in any sandboxed frame).
       wrap.appendChild(f);
       entry.el = f;
       this._wire(wrap, () => this._expand('iframe', b.src));   // inline is a preview; tap to expand
@@ -216,8 +218,7 @@ export class EmbedOverlay implements IDisposable {
     let el: HTMLElement;
     if (kind === 'iframe') {
       const f = doc.createElement('iframe');
-      f.src = src;
-      f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms');
+      f.src = src;                                    // trusted *.internal only (see _create); no sandbox → PDF viewer works
       el = f;
     } else {
       const img = doc.createElement('img');
