@@ -5,7 +5,7 @@ import { CanvasAddon } from '@xterm/addon-canvas';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
-import { registerWrappedWebLinks } from './addons/wraplinks';
+import { openLink, registerWrappedWebLinks } from './addons/wraplinks';
 import { ImageAddon } from '../../../vendor/xterm-addon-image/ImageAddon';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { OverlayAddon } from './addons/overlay';
@@ -172,7 +172,23 @@ export class Xterm {
 
     @bind
     public open(parent: HTMLElement) {
-        this.terminal = new Terminal(this.options.termOptions);
+        this.terminal = new Terminal({
+            ...this.options.termOptions,
+            // OSC 8 hyperlinks (ESC]8;;URI ESC\ text ESC]8;; ESC\) are PARSED by xterm out of
+            // the box, but a click only activates when a linkHandler is supplied — without one
+            // the text is styled and utterly dead. CC emits every markdown link as OSC 8, so
+            // this one option is what makes `[text](url)` clickable in the terminal.
+            //
+            // Complementary to (not overlapping with) the wraplinks provider registered below:
+            // that one finds BARE URLs printed as plain text, including ones wrapped across
+            // lines. OSC 8 carries its URI out of band, so no text pattern can ever find it.
+            //
+            // allowNonHttpProtocols is left at its default (false): a hostile OSC 8 payload
+            // therefore cannot smuggle javascript:/data: past window.open.
+            linkHandler: {
+                activate: (event, uri) => openLink(event, uri),
+            },
+        });
         const { terminal, fitAddon, overlayAddon, clipboardAddon } = this;
         // Prepend the blank-glyph font (see index.scss @font-face) so the canvas/webgl
         // renderers paint U+10EEEE (kitty image placeholder) as nothing instead of a notdef
