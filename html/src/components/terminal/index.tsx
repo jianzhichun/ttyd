@@ -483,18 +483,27 @@ export class Terminal extends Component<Props, State> {
 
         let curKbT = 0; // current keybar translateY (px) — incremental measure + no-op skip
         let lastLift = -1;
-        let barUp = false; // whether .keybar-up is currently applied (toggle only on change)
         let screenEl: HTMLElement | null = null; // cached .xterm-screen (page-lifetime)
+
+        // The keybar is always visible now, and being `fixed` it paints OVER the terminal.
+        // Reserve exactly its height at the bottom of #terminal-root so the last rows (Claude
+        // Code's input box and its prompts) are never buried under it. Measured, not hardcoded:
+        // adding or removing a key changes the bar's row count, and a stale constant would
+        // silently misalign the layout. Changing the padding refits xterm (the ResizeObserver
+        // in Xterm.open), so the PTY follows.
+        if (keybar && this.root) {
+            const reserve = () => {
+                const h = keybar.getBoundingClientRect().height;
+                if (h > 0 && this.root) this.root.style.paddingBottom = `${h}px`;
+            };
+            reserve();
+            if (typeof ResizeObserver !== 'undefined') {
+                new ResizeObserver(reserve).observe(keybar);
+            }
+        }
         const apply = () => {
             const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
             this.kbShown = kb > 1; // soft keyboard is up iff the visual viewport shrank
-            // Keybar is visible ONLY while the soft keyboard is up. Toggle the class
-            // solely on a state change so we don't touch the DOM on every rAF /
-            // cursor-move frame while typing.
-            if (keybar && this.kbShown !== barUp) {
-                keybar.classList.toggle('keybar-up', this.kbShown);
-                barUp = this.kbShown;
-            }
             // Pin the keybar's BOTTOM to the keyboard's top edge (= the visual
             // viewport's bottom edge in screen coords), measured from the bar's REAL
             // on-screen box. translateY(-kb) assumes the bar sits exactly at the
@@ -599,10 +608,7 @@ export class Terminal extends Component<Props, State> {
             vv.removeEventListener('scroll', onViewport);
             cursorMove?.dispose();
             this.container.style.transform = '';
-            if (keybar) {
-                keybar.style.transform = '';
-                keybar.classList.remove('keybar-up');
-            }
+            if (keybar) keybar.style.transform = '';
             dbgEl?.remove();
         };
     }

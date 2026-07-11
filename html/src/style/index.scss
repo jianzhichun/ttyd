@@ -153,14 +153,15 @@ body {
 }
 
 @media (pointer: coarse) {
-    // Keybar is fixed / out of the flex flow, so the terminal fills the whole
-    // height and toggling the bar never resizes the xterm grid. Keep the terminal's
-    // last row clear of the home indicator while the keybar is hidden; env()
-    // collapses to 0 once the keyboard (and keybar) are up, so this never fights the
-    // keyboard-lift math in setupViewport.
+    // The keybar is fixed / out of the flex flow, so it PAINTS OVER the terminal rather
+    // than shrinking it. Now that it is always visible, the terminal has to reserve that
+    // strip itself or the bottom rows — which is exactly where Claude Code draws its input
+    // box and its prompts — would sit underneath it. setupViewport measures the bar and
+    // writes the real height here (see the ResizeObserver there); this value is only the
+    // pre-measurement fallback, sized for the current 2-row bar.
     #terminal-root {
         box-sizing: border-box;
-        padding-bottom: env(safe-area-inset-bottom);
+        padding-bottom: calc(107px + env(safe-area-inset-bottom));
     }
 
     // Uniform 7-per-row grid, equal-width cells. Long labels truncate (ellipsis),
@@ -187,21 +188,14 @@ body {
         user-select: none;
         -webkit-user-select: none;
         will-change: transform; // pinned above the keyboard via transform (setupViewport)
-        // Shown ONLY while the soft keyboard is up (declutter when idle) —
-        // setupViewport toggles .keybar-up off this.kbShown. Fade via opacity/
-        // visibility only: transform is reserved for the keyboard-follow pin, so it
-        // must never be part of a transition. visibility (not display:none) keeps
-        // the bar measurable, so the pin can position it in the frame it appears.
-        opacity: 0;
-        visibility: hidden;
-        pointer-events: none;
-        transition: opacity 0.12s ease;
-    }
-
-    #keybar.keybar-up {
-        opacity: 1;
-        visibility: visible;
-        pointer-events: auto;
+        // ALWAYS visible. It used to show only while the soft keyboard was up ("declutter
+        // when idle"), but that left no way to press anything when Claude Code asks a
+        // question (AskUserQuestion / a permission prompt): those need ↑↓ and Enter and
+        // offer NO text field, so the keyboard can't be summoned — and with the keyboard
+        // down the bar was hidden. Arrow keys, Esc, Ctrl and Enter are the terminal's
+        // bread and butter; the screen space they cost is worth less than being unable to
+        // answer a prompt. setupViewport still pins the bar above the keyboard when one
+        // opens; it just no longer gates its visibility.
     }
 
     .keybar-key {
