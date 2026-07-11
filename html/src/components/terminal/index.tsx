@@ -613,6 +613,17 @@ export class Terminal extends Component<Props, State> {
         let single = false;
         let scrolled = false;
         let swiped = false; // fired a window switch this gesture (one per swipe)
+        let lpTimer = 0; // long-press timer (0 = inactive)
+        let selecting = false; // long press fired in output -> movement extends the selection
+        let anchor: { col: number; row: number } | null = null; // where the selection started
+        let pendingPaste = false; // long press fired in the input box -> paste on release
+
+        const cancelLP = () => {
+            if (lpTimer) {
+                clearTimeout(lpTimer);
+                lpTimer = 0;
+            }
+        };
 
         // Wheel notches are coalesced per animation frame and sent as ONE batched
         // sequence, so a fast swipe doesn't flood the app with dozens of separate
@@ -686,13 +697,45 @@ export class Terminal extends Component<Props, State> {
             vY = 0;
             scrolled = false;
             swiped = false;
+            selecting = false;
+            pendingPaste = false;
+            anchor = null;
+            cancelLP();
+            if (single) {
+                // Hold still ~480ms. Long-press is the phone's native text gesture, and tap
+                // is already taken (tmux click). What it does depends on WHERE:
+                //   output box  -> start a selection (drag to extend, release to copy)
+                //   input box   -> paste
+                lpTimer = window.setTimeout(() => {
+                    lpTimer = 0;
+                    (navigator as Navigator & { vibrate?: (n: number) => void }).vibrate?.(8);
+                    if (this.inInputZone(sy)) {
+                        // NOT pasting here: clipboard.readText() needs a transient user
+                        // activation, and a setTimeout callback has none. Defer to touchend,
+                        // which is still inside the gesture.
+                        pendingPaste = true;
+                        return;
+                    }
+                    selecting = true;
+                    anchor = this.cellAt(sx, sy);
+                    this.sendMouse(0, sx, sy, true); // press -> tmux marks the anchor
+                }, 480);
+            }
         };
         const onMove = (e: TouchEvent) => {
             if (!single || e.touches.length !== 1) return;
             const x = e.touches[0].clientX;
             const y = e.touches[0].clientY;
+            if (selecting) {
+                // Drag to extend. tmux sees a button-1 drag, enters copy-mode and paints
+                // the highlight itself. No scrolling, no window switch while selecting.
+                this.sendMouse(32, x, y, true);
+                return;
+            }
             const dx = x - sx;
             const dy = y - sy;
+            // real movement before the timer fires -> it's a scroll/swipe, not a long press
+            if (lpTimer && Math.abs(dx) + Math.abs(dy) > 10) cancelLP();
             // horizontal-dominant -> window switch, with the charge-up hint
             if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 12) {
                 scrolled = true; // not a tap
@@ -724,7 +767,44 @@ export class Terminal extends Component<Props, State> {
             }
         };
         const onEnd = (e: TouchEvent) => {
+            cancelLP();
             this.hideSwipe();
+            if (pendingPaste) {
+                pendingPaste = false;
+                // We are inside the touchend handler, so the gesture's user activation is
+                // still live and Safari/Chrome will honour readText(). (Calling it from the
+                // long-press timer instead would be rejected on iOS.)
+                navigator.clipboard
+                    .readText()
+                    .then(t => {
+                        if (t) this.xterm.sendData(t);
+                    })
+                    .catch(() => {
+                        /* denied or empty — no-op */
+                    });
+                return;
+            }
+            if (selecting) {
+                selecting = false;
+                const t = e.changedTouches[0];
+                const head = t ? this.cellAt(t.clientX, t.clientY) : null;
+                // Copy from the BUFFER ourselves rather than relying on tmux's OSC 52.
+                // tmux does emit it (copy-command -> OSC 52 ';c;' -> ClipboardAddon ->
+                // navigator.clipboard), and that is exactly how the desktop mouse copies —
+                // but it arrives asynchronously over the WebSocket, long after this gesture's
+                // user activation has expired, and iOS Safari refuses writeText() without
+                // one. Doing it here keeps us inside the gesture. tmux still gets the
+                // release below, so it exits copy-mode and clears its highlight as usual.
+                const text = anchor && head ? this.textBetween(anchor, head) : '';
+                if (text) {
+                    navigator.clipboard.writeText(text).catch(() => {
+                        /* denied — the OSC 52 path may still land on desktop */
+                    });
+                }
+                anchor = null;
+                if (t) this.sendMouse(0, t.clientX, t.clientY, false);
+                return;
+            }
             if (swiped) {
                 swiped = false;
                 return; // horizontal swipe already handled during the move
@@ -784,6 +864,7 @@ export class Terminal extends Component<Props, State> {
         const mouseTypes = ['mousedown', 'mousemove', 'mouseup', 'click', 'dblclick'];
         mouseTypes.forEach(type => el.addEventListener(type, swallowMouse, true));
         this.disposeTap = () => {
+            cancelLP();
             stopMomentum();
             if (wheelRaf) cancelAnimationFrame(wheelRaf);
             el.removeEventListener('touchstart', onStart);
@@ -882,18 +963,53 @@ export class Terminal extends Component<Props, State> {
         return tappedRow >= cursorVRow - 1; // box top border sits one row above the cursor
     }
 
-    // Translate a viewport tap into a terminal cell and emit an SGR left-click
-    // (press + release). getBoundingClientRect is transform-aware, so this stays
-    // correct even when the root is translated up over the floating keyboard.
-    private sendClick(clientX: number, clientY: number) {
+    // Viewport point -> terminal cell (1-based). getBoundingClientRect is transform-aware,
+    // so this stays correct even when the root is translated up over the floating keyboard.
+    private cellAt(clientX: number, clientY: number): { col: number; row: number } | null {
         const term = window.term;
         const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
-        if (!term || !screen) return;
+        if (!term || !screen) return null;
         const rect = screen.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return;
-        const col = Math.min(Math.max(Math.floor((clientX - rect.left) / (rect.width / term.cols)) + 1, 1), term.cols);
-        const row = Math.min(Math.max(Math.floor((clientY - rect.top) / (rect.height / term.rows)) + 1, 1), term.rows);
-        this.xterm.sendData(`\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`);
+        if (rect.width <= 0 || rect.height <= 0) return null;
+        return {
+            col: Math.min(Math.max(Math.floor((clientX - rect.left) / (rect.width / term.cols)) + 1, 1), term.cols),
+            row: Math.min(Math.max(Math.floor((clientY - rect.top) / (rect.height / term.rows)) + 1, 1), term.rows),
+        };
+    }
+
+    // Emit one SGR mouse event at a viewport point. btn 0 = left button, 32 = motion with
+    // the left button held (a drag). press=false emits the release form (lowercase 'm').
+    // tmux has `mouse on`, so it is the one consuming these.
+    private sendMouse(btn: number, clientX: number, clientY: number, press: boolean) {
+        const cell = this.cellAt(clientX, clientY);
+        if (!cell) return;
+        this.xterm.sendData(`\x1b[<${btn};${cell.col};${cell.row}${press ? 'M' : 'm'}`);
+    }
+
+    private sendClick(clientX: number, clientY: number) {
+        this.sendMouse(0, clientX, clientY, true);
+        this.sendMouse(0, clientX, clientY, false);
+    }
+
+    // Text between two cells (inclusive), read straight from xterm's buffer. Used to put a
+    // touch selection on the clipboard from inside the gesture — see onEnd for why we can't
+    // wait for tmux's OSC 52 on mobile. Cells are 1-based viewport coords, in either order.
+    private textBetween(a: { col: number; row: number }, b: { col: number; row: number }): string {
+        const term = window.term;
+        if (!term) return '';
+        const buf = term.buffer.active;
+        const forward = a.row < b.row || (a.row === b.row && a.col <= b.col);
+        const [s, e] = forward ? [a, b] : [b, a];
+        const out: string[] = [];
+        for (let r = s.row; r <= e.row; r++) {
+            const line = buf.getLine(buf.viewportY + r - 1);
+            if (!line) continue;
+            const full = line.translateToString(true);
+            const from = r === s.row ? s.col - 1 : 0;
+            const to = r === e.row ? e.col : full.length;
+            out.push(full.slice(from, to));
+        }
+        return out.join('\n').replace(/\s+$/, '');
     }
 
     // The clickable link (if any) under a tap. On coarse pointers every browser click on
@@ -903,12 +1019,9 @@ export class Terminal extends Component<Props, State> {
     // whole, not truncated.
     private linkAt(clientX: number, clientY: number): ILink | null {
         const term = window.term;
-        const screen = this.container.querySelector('.xterm-screen') as HTMLElement | null;
-        if (!term || !screen) return null;
-        const rect = screen.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return null;
-        const col = Math.min(Math.max(Math.floor((clientX - rect.left) / (rect.width / term.cols)) + 1, 1), term.cols);
-        const row = Math.min(Math.max(Math.floor((clientY - rect.top) / (rect.height / term.rows)) + 1, 1), term.rows);
+        const cell = this.cellAt(clientX, clientY);
+        if (!term || !cell) return null;
+        const { col, row } = cell;
 
         // An OSC 8 hyperlink carries its URI OUT OF BAND (the target never appears in the
         // rendered text), so computeLinks — which scans text — is structurally blind to it.
