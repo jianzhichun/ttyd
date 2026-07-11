@@ -358,13 +358,21 @@ export class Terminal extends Component<Props, State> {
         ta.setAttribute('spellcheck', 'false');
     }
 
-    // Soft-keyboard backspace auto-repeat. A mobile keyboard fires ONE Backspace
-    // keydown and then nothing while the key is held: xterm keeps its helper
-    // textarea empty, so the OS has no character to repeat-delete and stops after
-    // one. We synthesize the repeat — xterm still sends the first DEL on keydown,
-    // then after a short hold we emit DEL on an interval until the key is released
-    // (keyup), focus is lost, or a safety cap is hit. If the platform DOES deliver
-    // native key-repeat (e.repeat), we stand down and let it drive (e.g. Android).
+    // Soft-keyboard backspace auto-repeat, for platforms that fire ONE Backspace keydown and
+    // then nothing while the key is held (xterm keeps its helper textarea empty, so the OS
+    // has no character to repeat-delete and gives up after one). We synthesize the repeat:
+    // xterm sends the first DEL on keydown, then after a short hold we emit DEL on an
+    // interval until keyup, blur, or a safety cap. When the platform DOES deliver native
+    // key-repeat (e.repeat) we stand down and let it drive.
+    //
+    // MEASURED ON iOS (Chinese keyboard, 2026-07-11) — this synthesis NEVER RUNS THERE:
+    //   * holding the key fires keydown+keyup PAIRS, so keyup does NOT mean "released"...
+    //   * ...and that keyup lands milliseconds after each keydown, cancelling the 400ms
+    //     timer long before it could fire;
+    //   * meanwhile iOS DOES send native repeat (e.repeat) and xterm turns each one into a
+    //     DEL, which is what actually makes held-backspace work on an iPhone.
+    // So do NOT "fix" the timer by ignoring keyup without first re-checking whether the OS
+    // repeat is already doing the job on that device — you would get double deletion.
     private setupKeyRepeat() {
         const ta = this.container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
         if (!ta) return;
@@ -787,13 +795,22 @@ export class Terminal extends Component<Props, State> {
                 // We are inside the touchend handler, so the gesture's user activation is
                 // still live and Safari/Chrome will honour readText(). (Calling it from the
                 // long-press timer instead would be rejected on iOS.)
+                if (!navigator.clipboard?.readText) {
+                    this.flashToast('粘贴不可用: 无 clipboard.readText');
+                    return;
+                }
                 navigator.clipboard
                     .readText()
                     .then(t => {
                         if (t) this.xterm.sendData(t);
+                        else this.flashToast('剪贴板为空');
                     })
-                    .catch(() => {
-                        /* denied or empty — no-op */
+                    .catch(err => {
+                        // Surface it. iOS Safari gates readText() behind a system "Paste"
+                        // confirmation bubble even inside a user gesture, and swallowing the
+                        // rejection here turns a paste that silently does nothing into a black
+                        // box — which is exactly what it was.
+                        this.flashToast(`粘贴失败: ${(err && err.name) || err}`);
                     });
                 return;
             }
