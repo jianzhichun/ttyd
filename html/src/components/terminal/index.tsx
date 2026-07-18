@@ -649,6 +649,8 @@ export class Terminal extends Component<Props, State> {
         let selecting = false; // long press fired in output -> movement extends the selection
         let anchor: { col: number; row: number } | null = null; // where the selection started
         let pendingPaste = false; // long press fired in the input box -> paste on release
+        let reordering = false; // long press fired on the status bar -> drag reorders windows
+        let reorderCol = 0; // last column reported while reordering (drags are per-cell)
 
         const cancelLP = () => {
             if (lpTimer) {
@@ -736,6 +738,7 @@ export class Terminal extends Component<Props, State> {
             if (single) {
                 // Hold still ~480ms. Long-press is the phone's native text gesture, and tap
                 // is already taken (tmux click). What it does depends on WHERE:
+                //   status bar  -> pick the window up (drag along the bar to reorder)
                 //   output box  -> start a selection (drag to extend, release to copy)
                 //   input box   -> paste
                 lpTimer = window.setTimeout(() => {
@@ -746,6 +749,19 @@ export class Terminal extends Component<Props, State> {
                     // iPhone actually gets.
                     (navigator as Navigator & { vibrate?: (n: number) => void }).vibrate?.(8);
                     this.tapRipple(sx, sy);
+                    // Status bar first: it is the terminal's last row, which the input
+                    // zone also claims whenever CC's cursor sits near the bottom.
+                    if (this.inStatusZone(sy)) {
+                        // tmux's own drag-to-reorder, driven from touch: the press picks
+                        // the window up (MouseDown1Status) and each drag step swaps it
+                        // with the label being crossed (MouseDrag1Status, see
+                        // ~/bin/tmux-window-drag). Nothing to copy here, so — unlike a
+                        // selection — the release writes no clipboard.
+                        reordering = true;
+                        reorderCol = this.cellAt(sx, sy)?.col ?? 0;
+                        this.sendMouse(0, sx, sy, true);
+                        return;
+                    }
                     if (this.inInputZone(sy)) {
                         // NOT pasting here: clipboard.readText() needs a transient user
                         // activation, and a setTimeout callback has none. Defer to touchend,
@@ -771,6 +787,18 @@ export class Terminal extends Component<Props, State> {
             if (!single || e.touches.length !== 1) return;
             const x = e.touches[0].clientX;
             const y = e.touches[0].clientY;
+            if (reordering) {
+                // One drag event per cell crossed, not per touchmove: each one runs a
+                // tmux binding (a shell), and the swap only depends on which label the
+                // finger is over. Stay on the status row so a wobbly finger doesn't
+                // hand tmux a pane drag.
+                const col = this.cellAt(x, sy)?.col ?? 0;
+                if (col && col !== reorderCol) {
+                    reorderCol = col;
+                    this.sendMouse(32, x, sy, true);
+                }
+                return;
+            }
             if (selecting) {
                 // Drag to extend. tmux sees a button-1 drag, enters copy-mode and paints
                 // the highlight itself. No scrolling, no window switch while selecting.
@@ -814,6 +842,15 @@ export class Terminal extends Component<Props, State> {
         const onEnd = (e: TouchEvent) => {
             cancelLP();
             this.hideSwipe();
+            if (reordering) {
+                reordering = false;
+                const t = e.changedTouches[0];
+                // Release on the status row (sy, not the finger's y) so tmux ends the
+                // drag it has been tracking there — MouseDragEnd1Status is what disarms
+                // the reorder.
+                this.sendMouse(0, t ? t.clientX : sx, sy, false);
+                return;
+            }
             if (pendingPaste) {
                 pendingPaste = false;
                 // We are inside the touchend handler, so the gesture's user activation is
@@ -916,6 +953,10 @@ export class Terminal extends Component<Props, State> {
         const onCancel = () => {
             cancelLP();
             this.hideSwipe();
+            if (reordering) {
+                reordering = false;
+                this.sendMouse(0, sx, sy, false); // let tmux finish the drag it thinks is live
+            }
             if (selecting) {
                 selecting = false;
                 this.sendMouse(0, sx, sy, false); // let tmux finish the drag it thinks is live
@@ -1043,6 +1084,15 @@ export class Terminal extends Component<Props, State> {
         if (cursorVRow < 0 || cursorVRow >= term.rows) return false; // cursor off-screen
         const tappedRow = Math.floor((clientY - rect.top) / (rect.height / term.rows));
         return tappedRow >= cursorVRow - 1; // box top border sits one row above the cursor
+    }
+
+    // Is this touch on tmux's status bar? That is the terminal's last row — tmux draws
+    // it into the same grid, so there is no element to hit-test; the row index is the
+    // whole test. Checked BEFORE inInputZone, which also claims the bottom rows.
+    private inStatusZone(clientY: number): boolean {
+        const term = window.term;
+        if (!term) return false;
+        return this.cellAt(0, clientY)?.row === term.rows;
     }
 
     // Viewport point -> terminal cell (1-based). getBoundingClientRect is transform-aware,
