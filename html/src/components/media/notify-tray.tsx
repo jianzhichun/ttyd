@@ -96,7 +96,18 @@ export class NotifyTray extends Component<unknown, State> {
                         </div>
                         <div class="nt-list">
                             {items.map(n => (
-                                <button key={n.id} class="nt-item" type="button" onClick={() => this.tap(n)}>
+                                <button
+                                    key={n.id}
+                                    class="nt-item"
+                                    type="button"
+                                    onClick={e => {
+                                        // A link click should open the link only — not also clear the
+                                        // card / jump to tmux. The <a> default navigation proceeds
+                                        // (we don't preventDefault); we just skip the card tap.
+                                        if ((e.target as Element).closest?.('a')) return;
+                                        this.tap(n);
+                                    }}
+                                >
                                     <div class="nt-row">
                                         <span class="nt-title">{n.title || n.kind || 'notify'}</span>
                                         <span class="nt-time">{ago(n.ts)}</span>
