@@ -2,6 +2,7 @@ import { Component, h } from 'preact';
 import { createPortal } from 'preact/compat';
 
 import { notifyStore, Notif } from './notify';
+import { renderMd } from './markdown';
 
 // Floating notification overlay (top-left). Polls the same-origin __ccnotify
 // endpoint for messages pushed from the host (`cc-notify`, e.g. a WeChat
@@ -100,7 +101,12 @@ export class NotifyTray extends Component<unknown, State> {
                                         <span class="nt-title">{n.title || n.kind || 'notify'}</span>
                                         <span class="nt-time">{ago(n.ts)}</span>
                                     </div>
-                                    {n.body && <div class="nt-body">{n.body}</div>}
+                                    {n.body && (
+                                        <div
+                                            class="nt-body md"
+                                            dangerouslySetInnerHTML={{ __html: renderMd(n.body) }}
+                                        />
+                                    )}
                                 </button>
                             ))}
                         </div>
