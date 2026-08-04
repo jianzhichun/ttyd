@@ -282,7 +282,8 @@ body {
     font-size: 15px;
     line-height: 32px;
     text-align: center;
-    background: rgba(28, 28, 28, 0.92);
+    // 同 .nt-panel:必须不透明。0.92 的 8% 透光让幽灵字差 13.9 级,比卡片原来还重 3 倍。
+    background: #1c1c1c;
     border: 1px solid #cfae00;
     border-radius: 17px;
     color: #fdeb61;
@@ -298,7 +299,9 @@ body {
     max-height: 60vh;
     display: flex;
     flex-direction: column;
-    background: rgba(24, 24, 24, 0.97);
+    // 必须完全不透明。曾用 rgba(...,0.97):3% 透光让终端正文透到卡片下面 —— 实测幽灵字
+    // 比卡片底色亮 4.7 级(0.03×(200−26)≈5.2,吻合),和卡片自己的行错开,读起来像重影。
+    background: #181818;
     border: 1px solid #555;
     border-radius: 10px;
     overflow: hidden;
@@ -418,6 +421,25 @@ body {
 .nt-body.md a {
     color: #6cb6ff;
     text-decoration: underline;
+}
+.nt-body.md table {
+    width: auto;
+    max-width: 100%;
+    margin: 3px 0;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+.nt-body.md th,
+.nt-body.md td {
+    border: 1px solid #3a3c40;
+    padding: 2px 5px;
+    text-align: left;
+    vertical-align: top;
+}
+.nt-body.md th {
+    background: #2a2c30;
+    color: #d6d6d6;
+    font-weight: 700;
 }
 
 // Slide-to-verify ("拖拽验证码") style charge-up hint for the swipe -> switch-window
@@ -600,6 +622,12 @@ body {
     transform-origin: top left; /* scaled to fit by JS (_fitIframe) */
     pointer-events: none; /* inline iframe is a preview; the wrap handles the tap */
     background: #fff;
+}
+.cc-embed-interactive {
+    cursor: default; /* not a preview: no zoom cursor */
+}
+.cc-embed-interactive .cc-embed-frame {
+    pointer-events: auto; /* full-pane view: mouse/keyboard reach the framed app directly */
 }
 /* expand modal: img lightbox / interactive iframe — page-level, above everything */
 .cc-embed-modal {
