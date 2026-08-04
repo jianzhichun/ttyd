@@ -8,7 +8,9 @@ export interface Notif {
     title: string;
     body: string;
     kind: string;
-    window: string; // tmux window to select when the card is tapped
+    window: string; // compatibility alias of stable window_id; browser never targets it directly
+    window_id?: string;
+    pane_id?: string;
     ts: number; // server epoch seconds
 }
 
