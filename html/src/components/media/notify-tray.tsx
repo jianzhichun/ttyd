@@ -6,8 +6,9 @@ import { renderMd } from './markdown';
 
 // Floating notification overlay (top-left). Polls the same-origin __ccnotify
 // endpoint for messages pushed from the host (`cc-notify`, e.g. a WeChat
-// monitor) and shows them as a tappable feed. Tapping a card jumps to the tmux
-// window the notification came from. Portaled to <body> like the media tray.
+// monitor) and shows them as an actionable feed. Each card keeps its content
+// readable while an explicit Jump button selects its source tmux window.
+// Portaled to <body> like the media tray.
 
 const POLL_MS = 4000;
 
@@ -55,7 +56,7 @@ export class NotifyTray extends Component<unknown, State> {
 
     private toggle = () => this.setState(s => ({ open: !s.open }));
 
-    private tap = (n: Notif) => {
+    private jump = (n: Notif) => {
         // server-side jump: POST the id; the server runs `tmux select-window` to the
         // stored session:window (no keystroke injection — that leaks into the pane).
         fetch(new URL('__ccswitch', window.location.href).href, {
@@ -82,32 +83,28 @@ export class NotifyTray extends Component<unknown, State> {
         if (!items.length) return null;
         return createPortal(
             <div id="notify-tray">
-                <button class="nt-btn" type="button" onClick={this.toggle} aria-label="notifications">
+                <button
+                    class="nt-btn"
+                    type="button"
+                    onClick={this.toggle}
+                    aria-label="Notifications"
+                    aria-expanded={open}
+                    aria-controls="notify-panel"
+                >
                     {items.length}
                 </button>
 
                 {open && (
-                    <div class="nt-panel">
+                    <div id="notify-panel" class="nt-panel" role="region" aria-label="Notifications">
                         <div class="nt-head">
                             <span>notifications — {items.length}</span>
                             <button class="nt-clear" type="button" onClick={this.clear}>
                                 clear
                             </button>
                         </div>
-                        <div class="nt-list">
+                        <ol class="nt-list">
                             {items.map(n => (
-                                <button
-                                    key={n.id}
-                                    class="nt-item"
-                                    type="button"
-                                    onClick={e => {
-                                        // A link click should open the link only — not also clear the
-                                        // card / jump to tmux. The <a> default navigation proceeds
-                                        // (we don't preventDefault); we just skip the card tap.
-                                        if ((e.target as Element).closest?.('a')) return;
-                                        this.tap(n);
-                                    }}
-                                >
+                                <li key={n.id} class="nt-item">
                                     <div class="nt-row">
                                         <span class="nt-title">{n.title || n.kind || 'notify'}</span>
                                         <span class="nt-time">{ago(n.ts)}</span>
@@ -118,9 +115,19 @@ export class NotifyTray extends Component<unknown, State> {
                                             dangerouslySetInnerHTML={{ __html: renderMd(n.body) }}
                                         />
                                     )}
-                                </button>
+                                    <div class="nt-actions">
+                                        <button
+                                            class="nt-jump"
+                                            type="button"
+                                            onClick={() => this.jump(n)}
+                                            aria-label={`Jump to source: ${n.title || n.kind || 'notification'}`}
+                                        >
+                                            Jump
+                                        </button>
+                                    </div>
+                                </li>
                             ))}
-                        </div>
+                        </ol>
                     </div>
                 )}
             </div>,

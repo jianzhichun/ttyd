@@ -215,7 +215,7 @@ export class Xterm {
 
         terminal.open(parent);
         this.guardIme(parent);
-        this.allowNativePaste(terminal);
+        this.customizeKeyboard(terminal);
         // Page-lifetime: do NOT push into the socket-scoped `disposables`. dispose()
         // runs on every socket close (every auto-reconnect) and initListeners() never
         // re-registers the link provider — registering it here would make clickable
@@ -263,34 +263,34 @@ export class Xterm {
         window.setInterval(this.reconnectNow, 3000);
     }
 
+    // Browser-terminal keyboard adaptations that must happen before xterm encodes
+    // the DOM event into terminal bytes.
+    //
+    // Shift+Enter cannot be expressed by an ordinary terminal: xterm maps it to the
+    // exact same CR as Enter. Claude Code therefore never sees `shift+enter`, no matter
+    // what ~/.claude/keybindings.json says. Translate it here to Ctrl+J (LF), Claude
+    // Code's default/newline byte, while leaving Enter as CR/submit. Alt+Enter is
+    // swallowed so the old Option+Enter route is actually gone (Claude Code recognizes
+    // ESC CR before configurable keybindings, so `alt+enter: null` alone cannot remove it).
+    //
     // Ctrl+V on Windows/Linux: hand the keydown to the browser instead of the pty.
-    //
-    // xterm maps Ctrl+<letter> to its C0 control char, so Ctrl+V sends 0x16 (^V) and
-    // then calls cancel(ev) — preventDefault AND stopPropagation — on the keydown.
-    // preventDefault on that keydown cancels the browser's paste default action, so
-    // the document-level `paste` listener in <Terminal> (setupPaste, the screenshot /
-    // file uploader) NEVER fires off the keyboard on Windows/Linux; the file silently
-    // doesn't upload and a stray ^V lands in Claude Code's input. Verified 2026-07-09
-    // against @xterm/xterm 5.5 with playwright: Ctrl+V → only onData("\x16"), no paste
-    // event at all. Ctrl+Shift+V does reach `paste`, but Chrome treats it as "paste as
-    // plain text" and strips the file items (clipboardData.items === []), so it is not
-    // a workaround for uploads. macOS is fine as-is: Cmd+V is metaKey and never enters
-    // xterm's ctrl branch, which is why this only ever bit Windows.
-    //
-    // Returning false makes xterm bail out of _keyDown before it either sends or
-    // cancels anything, so the browser performs its normal paste. ^V itself stays
-    // reachable through the keybar's sticky Ctrl, which transforms onData rather than
-    // keydown — the cost is Ctrl+V no longer reaching vim as visual-block from a
-    // physical keyboard, the same trade Windows Terminal and VS Code already make.
-    //
-    // Matched on keyCode 86 rather than `key`/`code` on purpose: that is the exact
-    // test xterm's evaluateKeyboardEvent uses, so we intercept precisely the events it
-    // would have swallowed, and nothing else.
-    private allowNativePaste(terminal: Terminal) {
+    // xterm otherwise maps it to ^V and cancels the browser paste event, preventing
+    // setupPaste from seeing clipboard images/files. macOS Cmd+V is already native.
+    // Returning false makes xterm stop; Shift+Enter is sent manually, while Ctrl+V is
+    // left to the browser's default action.
+    private customizeKeyboard(terminal: Terminal) {
         const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
         terminal.attachCustomKeyEventHandler(ev => {
-            if (isMac || ev.type !== 'keydown') return true;
-            if (ev.keyCode !== 86) return true;
+            if (ev.type !== 'keydown') return true;
+            if (ev.key === 'Enter' && !ev.ctrlKey && !ev.metaKey) {
+                if (ev.shiftKey && !ev.altKey) {
+                    if (this.inputHandler) this.inputHandler('\n');
+                    else this.sendData('\n');
+                    return false;
+                }
+                if (ev.altKey && !ev.shiftKey) return false;
+            }
+            if (isMac || ev.keyCode !== 86) return true;
             return !(ev.ctrlKey && !ev.shiftKey && !ev.altKey && !ev.metaKey);
         });
     }

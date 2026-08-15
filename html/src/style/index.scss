@@ -265,10 +265,24 @@ body {
 // ── Media tray ──────────────────────────────────────────────────────────────
 
 // ── Notification tray ────────────────────────────────────────────────────────
-// Floating feed (top-left, amber) of messages pushed from the host via cc-notify.
+// Floating green-on-black feed of messages pushed from the host via cc-notify.
 #notify-tray {
+    --nt-bg: #0a0e0a;
+    --nt-fg: #33ff66;
+    --nt-accent: #39ff14;
+    --nt-selection: #16432c;
+    --nt-muted: #2f6b4a;
+    --nt-bright: #7dff9b;
+    --nt-text: #9affc0;
+    --nt-link: #87ffe0;
+    --nt-white: #d6ffe4;
+
     font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-    color: #d2d2d2;
+    color: var(--nt-text);
+}
+#notify-tray ::selection {
+    color: var(--nt-white);
+    background: var(--nt-selection);
 }
 .nt-btn {
     position: fixed;
@@ -280,15 +294,23 @@ body {
     padding: 0 9px;
     font-family: inherit;
     font-size: 15px;
+    font-weight: 700;
     line-height: 32px;
     text-align: center;
     // 同 .nt-panel:必须不透明。0.92 的 8% 透光让幽灵字差 13.9 级,比卡片原来还重 3 倍。
-    background: #1c1c1c;
-    border: 1px solid #cfae00;
-    border-radius: 17px;
-    color: #fdeb61;
+    background: var(--nt-bg);
+    border: 1px solid var(--nt-fg);
+    border-radius: 3px;
+    color: var(--nt-accent);
+    box-shadow: 0 0 12px rgba(51, 255, 102, 0.18);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+}
+.nt-btn:hover,
+.nt-btn:active {
+    color: var(--nt-white);
+    background: var(--nt-selection);
+    box-shadow: 0 0 16px rgba(57, 255, 20, 0.28);
 }
 .nt-panel {
     position: fixed;
@@ -301,11 +323,11 @@ body {
     flex-direction: column;
     // 必须完全不透明。曾用 rgba(...,0.97):3% 透光让终端正文透到卡片下面 —— 实测幽灵字
     // 比卡片底色亮 4.7 级(0.03×(200−26)≈5.2,吻合),和卡片自己的行错开,读起来像重影。
-    background: #181818;
-    border: 1px solid #555;
-    border-radius: 10px;
+    background: var(--nt-bg);
+    border: 1px solid var(--nt-muted);
+    border-radius: 4px;
     overflow: hidden;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.75), 0 0 18px rgba(51, 255, 102, 0.12);
 }
 .nt-head {
     display: flex;
@@ -313,33 +335,47 @@ body {
     justify-content: space-between;
     padding: 8px 10px;
     font-size: 12px;
-    color: #9a9a9a;
-    border-bottom: 1px solid #3a3a3a;
+    color: var(--nt-bright);
+    border-bottom: 1px solid var(--nt-muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 .nt-clear {
-    font-size: 12px;
-    color: #9a9a9a;
-    background: none;
-    border: none;
+    min-height: 26px;
+    padding: 2px 6px;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--nt-bright);
+    background: var(--nt-bg);
+    border: 1px solid transparent;
+    border-radius: 2px;
     cursor: pointer;
 }
+.nt-clear:hover,
+.nt-clear:active {
+    color: var(--nt-white);
+    background: var(--nt-selection);
+    border-color: var(--nt-fg);
+}
 .nt-list {
+    margin: 0;
+    padding: 0;
     overflow-y: auto;
+    list-style: none;
     -webkit-overflow-scrolling: touch;
 }
 .nt-item {
     display: block;
     width: 100%;
-    padding: 8px 10px;
-    background: none;
-    border: none;
-    border-bottom: 1px solid #2c2c2c;
-    color: #d2d2d2;
+    box-sizing: border-box;
+    padding: 9px 10px 8px;
+    background: var(--nt-bg);
+    border-bottom: 1px solid var(--nt-muted);
+    color: var(--nt-text);
     text-align: left;
-    cursor: pointer;
-}
-.nt-item:active {
-    background: #333;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
 }
 .nt-row {
     display: flex;
@@ -348,23 +384,61 @@ body {
     gap: 8px;
 }
 .nt-title {
-    font-size: 13px;
-    font-weight: 600;
-    white-space: nowrap;
+    min-width: 0;
     overflow: hidden;
+    color: var(--nt-fg);
+    font-size: 13px;
+    font-weight: 700;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .nt-time {
     flex: 0 0 auto;
     font-size: 11px;
-    color: #888;
+    color: var(--nt-bright);
 }
 .nt-body {
-    margin-top: 2px;
+    margin-top: 3px;
     font-size: 12px;
-    color: #b0b0b0;
+    color: var(--nt-text);
     white-space: normal;
     word-break: break-word;
+}
+.nt-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 7px;
+}
+.nt-jump {
+    min-width: 68px;
+    height: 28px;
+    padding: 0 10px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--nt-fg);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: var(--nt-bg);
+    border: 1px solid var(--nt-fg);
+    border-radius: 2px;
+    box-shadow: inset 0 0 8px rgba(51, 255, 102, 0.08);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.nt-jump:hover,
+.nt-jump:active {
+    color: var(--nt-white);
+    background: var(--nt-selection);
+    border-color: var(--nt-accent);
+    box-shadow: 0 0 10px rgba(57, 255, 20, 0.22);
+}
+.nt-btn:focus-visible,
+.nt-clear:focus-visible,
+.nt-jump:focus-visible,
+.nt-body.md a:focus-visible {
+    outline: 2px solid var(--nt-white);
+    outline-offset: 2px;
 }
 /* markdown-rendered notification bodies */
 .nt-body.md > *:first-child {
@@ -382,7 +456,7 @@ body {
     margin: 6px 0 3px 0;
     font-size: 12px;
     font-weight: 700;
-    color: #d6d6d6;
+    color: var(--nt-white);
 }
 .nt-body.md ul,
 .nt-body.md ol {
@@ -393,18 +467,19 @@ body {
     margin: 1px 0;
 }
 .nt-body.md code {
+    padding: 0 3px;
     font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: 11px;
-    background: #2a2c30;
-    padding: 0 3px;
-    border-radius: 3px;
+    background: var(--nt-selection);
+    border-radius: 2px;
 }
 .nt-body.md pre {
     margin: 3px 0;
     padding: 5px 6px;
-    background: #1f2024;
-    border-radius: 4px;
     overflow-x: auto;
+    background: var(--nt-selection);
+    border: 1px solid var(--nt-muted);
+    border-radius: 2px;
     white-space: pre;
 }
 .nt-body.md pre code {
@@ -412,15 +487,17 @@ body {
     padding: 0;
 }
 .nt-body.md strong {
-    color: #e0e0e0;
+    color: var(--nt-white);
     font-weight: 700;
 }
 .nt-body.md em {
     font-style: italic;
 }
 .nt-body.md a {
-    color: #6cb6ff;
+    color: var(--nt-link);
     text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
 }
 .nt-body.md table {
     width: auto;
@@ -431,15 +508,27 @@ body {
 }
 .nt-body.md th,
 .nt-body.md td {
-    border: 1px solid #3a3c40;
     padding: 2px 5px;
+    border: 1px solid var(--nt-muted);
     text-align: left;
     vertical-align: top;
 }
 .nt-body.md th {
-    background: #2a2c30;
-    color: #d6d6d6;
+    color: var(--nt-white);
     font-weight: 700;
+    background: var(--nt-selection);
+}
+
+@media (pointer: coarse) {
+    .nt-clear {
+        min-height: 34px;
+        padding: 4px 9px;
+    }
+    .nt-jump {
+        min-width: 88px;
+        height: 38px;
+        padding: 0 14px;
+    }
 }
 
 // Slide-to-verify ("拖拽验证码") style charge-up hint for the swipe -> switch-window

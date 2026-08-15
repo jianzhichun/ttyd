@@ -14,6 +14,33 @@ interface Props extends XtermOptions {
     id: string;
 }
 
+interface FileSystemEntry {
+    readonly isFile: boolean;
+    readonly isDirectory: boolean;
+    readonly name: string;
+}
+
+interface FileSystemFileEntry extends FileSystemEntry {
+    file(success: (file: File) => void, error?: (error: DOMException) => void): void;
+}
+
+interface FileSystemDirectoryEntry extends FileSystemEntry {
+    createReader(): {
+        readEntries(success: (entries: FileSystemEntry[]) => void, error?: (error: DOMException) => void): void;
+    };
+}
+
+type ClipboardEntryItem = DataTransferItem & {
+    webkitGetAsEntry?: () => FileSystemEntry | null;
+};
+
+interface UploadItem {
+    blob: Blob;
+    relativePath?: string;
+    folderId?: string;
+    folderName?: string;
+}
+
 interface State {
     modal: boolean;
     armed: '' | Mod;
@@ -25,6 +52,8 @@ interface State {
 }
 
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024; // keep in sync with server MAX_BYTES (2 GB)
+const MAX_FOLDER_ENTRIES = 10_000;
+const MAX_FOLDER_BYTES = MAX_UPLOAD;
 
 // Isolated, frozen host for xterm's DOM. xterm.open() appends its canvas/screen
 // directly into this div, OUTSIDE Preact's vdom — so the node must keep a stable
@@ -73,7 +102,7 @@ export class Terminal extends Component<Props, State> {
         uploadPct: 0,
         pasteBtn: null,
     };
-    private uploadQueue: Blob[] = [];
+    private uploadQueue: UploadItem[] = [];
     private uploading = false;
     private toastTimer?: number;
 
@@ -190,10 +219,13 @@ export class Terminal extends Component<Props, State> {
         );
     }
 
-    // ---- image upload (📎 button / Ctrl+V paste) ------------------------------
+    // ---- clipboard upload (📎 button / Ctrl+V / Cmd+V paste) ------------------
     // Upload the blob to the same-origin __ccupload endpoint (homevm writes it to
-    // /tmp/cc-paste and returns the path), then drop the path into CC's input so
-    // CC can Read the image. Replaces the manual cc-upload (trzsz) flow.
+    // /home/dev/tmp/paste), then bracketed-paste the path. Claude Code recognizes an image
+    // path arriving as pasted text and replaces it with its native `[Image #N]`
+    // attachment placeholder. Other files are inserted as @path mentions so Claude Code
+    // reads them as files without pretending they are images. Replaces the manual
+    // cc-upload (trzsz) flow.
     @bind
     private triggerUpload() {
         this.fileInput?.click();
@@ -202,21 +234,23 @@ export class Terminal extends Component<Props, State> {
     @bind
     private onFilePicked(e: Event) {
         const input = e.target as HTMLInputElement;
-        if (input.files) this.enqueue(Array.from(input.files));
+        if (input.files) this.enqueue(Array.from(input.files).map(blob => ({ blob })));
         input.value = ''; // allow re-picking the same file
     }
 
     // Queue files and upload them one at a time, surfacing progress in a toast.
-    private enqueue(blobs: Blob[]) {
-        this.uploadQueue.push(...blobs);
+    private enqueue(items: UploadItem[]) {
+        this.uploadQueue.push(...items);
         if (!this.uploading) this.drainQueue();
     }
 
     private async drainQueue() {
         this.uploading = true;
         let done = 0;
+        const folderPaths = new Set<string>();
         while (this.uploadQueue.length) {
-            const blob = this.uploadQueue.shift() as Blob;
+            const item = this.uploadQueue.shift() as UploadItem;
+            const { blob, relativePath } = item;
             const idx = ++done;
             const total = done + this.uploadQueue.length; // remaining + already-done
             const prefix = total > 1 ? `Upload ${idx}/${total} · ` : 'Upload · ';
@@ -227,12 +261,18 @@ export class Terminal extends Component<Props, State> {
             // show immediately (small uploads may finish before onprogress fires)
             this.setState({ upload: `${prefix}0%`, uploadPct: 0 });
             try {
-                const path = await this.uploadOne(blob, pct =>
+                const result = await this.uploadOne(item, pct =>
                     this.setState({ upload: `${prefix}${pct}%`, uploadPct: pct })
                 );
-                if (path) {
-                    this.xterm.sendData(path + ' ');
-                    this.flashToast(`Added ${path.split('/').pop()}`);
+                if (result) {
+                    if (relativePath || item.folderName) folderPaths.add(result.root || result.path);
+                    else {
+                        const input = blob.type.startsWith('image/')
+                            ? `\x1b[200~${result.path}\x1b[201~`
+                            : `@${result.path} `;
+                        this.xterm.sendData(input);
+                    }
+                    this.flashToast(`Added ${relativePath || item.folderName || result.path.split('/').pop()}`);
                 } else {
                     this.flashToast('Upload failed');
                 }
@@ -240,24 +280,32 @@ export class Terminal extends Component<Props, State> {
                 this.flashToast('Upload failed (endpoint unreachable)');
             }
         }
+        for (const path of folderPaths) this.xterm.sendData(`@${path} `);
         this.uploading = false;
     }
 
     // XHR (not fetch) so we get real upload progress events.
-    private uploadOne(blob: Blob, onProgress: (pct: number) => void): Promise<string | null> {
+    private uploadOne(
+        { blob, relativePath, folderId, folderName }: UploadItem,
+        onProgress: (pct: number) => void
+    ): Promise<{ path: string; root?: string } | null> {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open('POST', new URL('__ccupload', window.location.href).href);
             xhr.setRequestHeader('Content-Type', blob.type || 'application/octet-stream');
             const name = (blob as File).name;
             if (name) xhr.setRequestHeader('X-CC-Filename', encodeURIComponent(name));
+            if (relativePath) xhr.setRequestHeader('X-CC-Relative-Path', encodeURIComponent(relativePath));
+            if (folderId) xhr.setRequestHeader('X-CC-Folder-ID', folderId);
+            if (folderName) xhr.setRequestHeader('X-CC-Folder-Name', encodeURIComponent(folderName));
             xhr.upload.onprogress = e => {
                 if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
             };
             xhr.onload = () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
                     try {
-                        resolve(JSON.parse(xhr.responseText).path || null);
+                        const result = JSON.parse(xhr.responseText);
+                        resolve(result.path ? result : null);
                     } catch {
                         resolve(null);
                     }
@@ -280,31 +328,109 @@ export class Terminal extends Component<Props, State> {
         return n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(0)}MB` : `${(n / 1024).toFixed(0)}KB`;
     }
 
-    // Ctrl+V of one or more attachments: a screenshot, or files copied in the OS
-    // file manager (Finder/Explorer). Any file kind is accepted (not just images);
-    // CC can Read PDFs/text/etc. by the injected path.
+    private fileOf(entry: FileSystemFileEntry): Promise<File> {
+        return new Promise((resolve, reject) => entry.file(resolve, reject));
+    }
+
+    private readDirectory(reader: ReturnType<FileSystemDirectoryEntry['createReader']>): Promise<FileSystemEntry[]> {
+        return new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+    }
+
+    // readEntries() returns directory children in batches and an empty batch at EOF.
+    // Preserve the copied root name in every relative path so multiple pasted folders
+    // cannot collide on same-named children server-side.
+    private folderId(): string {
+        const webCrypto: Crypto | undefined = typeof crypto === 'undefined' ? undefined : crypto;
+        if (webCrypto?.randomUUID) return webCrypto.randomUUID();
+        const bytes = new Uint8Array(16);
+        if (webCrypto) webCrypto.getRandomValues(bytes);
+        else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+
+    private async walkEntry(
+        entry: FileSystemEntry,
+        path = entry.name,
+        state: { items: UploadItem[]; emptyFolders: UploadItem[]; entries: number; bytes: number; folderId: string } = {
+            items: [],
+            emptyFolders: [],
+            entries: 0,
+            bytes: 0,
+            folderId: this.folderId(),
+        }
+    ): Promise<UploadItem[]> {
+        state.entries++;
+        if (state.entries > MAX_FOLDER_ENTRIES) throw new Error(`folder has more than ${MAX_FOLDER_ENTRIES} entries`);
+        if (entry.isFile) {
+            const file = await this.fileOf(entry as FileSystemFileEntry);
+            state.bytes += file.size;
+            if (state.bytes > MAX_FOLDER_BYTES) throw new Error('folder is larger than 2GB');
+            state.items.push({ blob: file, relativePath: path, folderId: state.folderId });
+            return state.items;
+        }
+        if (!entry.isDirectory) return state.items;
+        const reader = (entry as FileSystemDirectoryEntry).createReader();
+        let batch = await this.readDirectory(reader);
+        if (!batch.length) {
+            state.emptyFolders.push({
+                blob: new Blob([]),
+                folderName: path,
+                folderId: state.folderId,
+            });
+        } else {
+            while (batch.length) {
+                for (const child of batch) await this.walkEntry(child, `${path}/${child.name}`, state);
+                batch = await this.readDirectory(reader);
+            }
+        }
+        if (path === entry.name) state.items.push(...state.emptyFolders);
+        return state.items;
+    }
+
+    // Ctrl+V / Cmd+V accepts screenshots, ordinary copied files and Finder/Explorer
+    // folders. Chromium exposes copied directory trees through webkitGetAsEntry(); files
+    // that do not provide an entry keep the ordinary getAsFile path. Folder contents are
+    // uploaded with relative paths and become one @folder mention after the batch lands.
     @bind
     private setupPaste() {
         const onPaste = (e: ClipboardEvent) => {
-            const items = e.clipboardData?.items;
-            if (!items) return;
-            const blobs: File[] = [];
-            for (let i = 0; i < items.length; i++) {
-                const it = items[i];
-                if (it.kind === 'file') {
-                    const f = it.getAsFile();
-                    if (f) blobs.push(f);
+            const transfer = e.clipboardData;
+            if (!transfer) return;
+            const entries: FileSystemEntry[] = [];
+            const files: UploadItem[] = [];
+            for (const raw of Array.from(transfer.items)) {
+                if (raw.kind !== 'file') continue;
+                const item = raw as ClipboardEntryItem;
+                const entry = item.webkitGetAsEntry?.();
+                if (entry) entries.push(entry);
+                else {
+                    const file = item.getAsFile();
+                    if (file) files.push({ blob: file });
                 }
             }
-            if (blobs.length) {
-                // Fully swallow the image paste: preventDefault stops the browser
-                // inserting it into xterm's helper textarea (which would flash a
-                // white box at the cursor), stopImmediatePropagation stops xterm's
-                // own paste listener from running on it at all.
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                this.enqueue(blobs);
+            // Some browsers expose copied files only through clipboardData.files.
+            if (!entries.length && !files.length) {
+                files.push(...Array.from(transfer.files).map(blob => ({ blob })));
             }
+            if (!entries.length && !files.length) return;
+
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            void (async () => {
+                try {
+                    const walked: UploadItem[] = [];
+                    for (const entry of entries) {
+                        if (entry.isDirectory) walked.push(...(await this.walkEntry(entry)));
+                        else walked.push({ blob: await this.fileOf(entry as FileSystemFileEntry) });
+                    }
+                    this.enqueue([...files, ...walked]);
+                } catch (error) {
+                    this.flashToast(`Folder paste failed: ${(error as Error).message}`);
+                }
+            })();
         };
         document.addEventListener('paste', onPaste, true); // capture: run before xterm's handler
         this.disposePaste = () => document.removeEventListener('paste', onPaste, true);
