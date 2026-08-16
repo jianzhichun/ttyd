@@ -278,17 +278,30 @@ export class Xterm {
     // setupPaste from seeing clipboard images/files. macOS Cmd+V is already native.
     // Returning false makes xterm stop; Shift+Enter is sent manually, while Ctrl+V is
     // left to the browser's default action.
+    //
+    // The Enter branches MUST preventDefault, and false alone is not enough:
+    // xterm's `_keyDown` bails out on a false handler *before* its own
+    // `event.preventDefault()`, so the browser goes on to fire `keypress`, whose
+    // handler asks the same custom handler again (type 'keypress' → true here) and
+    // sends charCode 13 = CR. Shift+Enter would then be LF *plus* a submit — the
+    // 2026-08-16 "one Shift+Enter, two blank lines" bug, whose earlier workaround
+    // rewrote that stray CR to LF in a WebSocket.send shim. Ctrl+V is the opposite
+    // case and deliberately keeps the default action.
     private customizeKeyboard(terminal: Terminal) {
         const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
         terminal.attachCustomKeyEventHandler(ev => {
             if (ev.type !== 'keydown') return true;
             if (ev.key === 'Enter' && !ev.ctrlKey && !ev.metaKey) {
                 if (ev.shiftKey && !ev.altKey) {
+                    ev.preventDefault();
                     if (this.inputHandler) this.inputHandler('\n');
                     else this.sendData('\n');
                     return false;
                 }
-                if (ev.altKey && !ev.shiftKey) return false;
+                if (ev.altKey && !ev.shiftKey) {
+                    ev.preventDefault();
+                    return false;
+                }
             }
             if (isMac || ev.keyCode !== 86) return true;
             return !(ev.ctrlKey && !ev.shiftKey && !ev.altKey && !ev.metaKey);
